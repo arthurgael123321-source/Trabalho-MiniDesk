@@ -1,0 +1,27 @@
+{
+  "name": "trabalho-minidesk",
+  "version": "1.0.0",
+  "description": "Trabalho em grupo de uma atividade proposta na aula de \"Métodos ágeis de desenvolvimento de sistemas\"",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arthurgael123321-source/Trabalho-MiniDesk.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/arthurgael123321-source/Trabalho-MiniDesk/issues"
+  },
+  "homepage": "https://github.com/arthurgael123321-source/Trabalho-MiniDesk#readme",
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "jest": "^30.5.1"
+  }
+}
