@@ -1,10 +1,13 @@
 {
   "name": "trabalho-minidesk",
   "version": "1.0.0",
-  "description": "Trabalho em grupo de uma atividade proposta na aula de \"Métodos ágeis de desenvolvimento de sistemas\"",
-  "main": "index.js",
+  "description": "FitTracker - gerenciador inteligente de treinos",
+  "main": "index.html",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "echo \"No tests configured\""
   },
   "repository": {
     "type": "git",
@@ -13,13 +16,18 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/arthurgael123321-source/Trabalho-MiniDesk/issues"
   },
   "homepage": "https://github.com/arthurgael123321-source/Trabalho-MiniDesk#readme",
   "dependencies": {
-    "express": "^5.2.1"
+    "@vitejs/plugin-react": "^4.3.4",
+    "express": "^5.2.1",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.1.0"
   },
   "devDependencies": {
     "jest": "^30.5.1"
