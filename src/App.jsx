@@ -42,9 +42,10 @@ const week = [
 ]
 
 const workouts = [
-  { title: 'Força & potência', subtitle: 'Peito, ombros e tríceps', time: '45 min', level: 'Intermediário', progress: 72, tone: 'dark' },
-  { title: 'Full body', subtitle: 'Corpo inteiro', time: '32 min', level: 'Iniciante', progress: 38, tone: 'light' },
-  { title: 'Mobilidade', subtitle: 'Alongamento e core', time: '20 min', level: 'Todos os níveis', progress: 0, tone: 'outline' },
+  { title: 'Força & potência', subtitle: 'Peito, ombros e tríceps', time: '45 min', level: 'Intermediário', progress: 72, tone: 'dark', category: 'Força' },
+  { title: 'HIIT cardio', subtitle: 'Corrida e intervalos', time: '28 min', level: 'Intermediário', progress: 0, tone: 'light', category: 'Cardio' },
+  { title: 'Full body', subtitle: 'Corpo inteiro', time: '32 min', level: 'Iniciante', progress: 38, tone: 'light', category: 'Full body' },
+  { title: 'Mobilidade', subtitle: 'Alongamento e core', time: '20 min', level: 'Todos os níveis', progress: 0, tone: 'outline', category: 'Mobilidade' },
 ]
 
 const exercises = [
@@ -68,10 +69,15 @@ function App() {
   const [showNotice, setShowNotice] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [demoEmpty, setDemoEmpty] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState(null)
 
   const handleStartWorkout = () => {
     setShowNotice(true)
     window.setTimeout(() => setShowNotice(false), 3200)
+  }
+
+  const handleSelectCategory = (label) => {
+    setSelectedCategory(current => (current === label ? null : label))
   }
 
   const activeWorkouts = demoEmpty ? [] : workouts
@@ -79,6 +85,7 @@ function App() {
   const activeLastWorkout = demoEmpty ? null : lastWorkout
   const weeklyTarget = week.filter(day => day.status !== 'rest').length
   const weeklyCompleted = demoEmpty ? 0 : week.filter(day => day.status === 'done').length
+  const filteredWorkouts = selectedCategory ? activeWorkouts.filter(workout => workout.category === selectedCategory) : activeWorkouts
 
   return (
     <div className="app-shell">
@@ -134,7 +141,7 @@ function App() {
 
           <section className="shortcuts-row">
             <span className="shortcuts-label"><Grid2X2 size={13} /> Atalhos rápidos</span>
-            <div className="shortcuts-list">{shortcuts.map(({ label, icon: Icon }) => <button className="shortcut-chip" key={label} onClick={handleStartWorkout}><Icon size={15} /> {label}</button>)}</div>
+            <div className="shortcuts-list">{shortcuts.map(({ label, icon: Icon }) => <button className={`shortcut-chip ${selectedCategory === label ? 'active' : ''}`} key={label} onClick={() => handleSelectCategory(label)}><Icon size={15} /> {label}</button>)}</div>
           </section>
 
           <section className="metrics-grid">
@@ -152,9 +159,19 @@ function App() {
                 <div className="week-summary-item"><span>Treinos esta semana</span><strong>{weeklyCompleted}<small> / {weeklyTarget}</small></strong></div>
                 <div className="week-summary-item"><span><CalendarDays size={12} /> Último treino realizado</span>{activeLastWorkout ? <strong>{activeLastWorkout.title} <small>· {activeLastWorkout.date}</small></strong> : <strong className="empty-text">Nenhum treino realizado ainda</strong>}</div>
               </div>
-              <div className="section-heading workout-heading"><div><h2>Treinos recomendados</h2><p>Baseados nos seus objetivos e histórico.</p></div><button className="icon-button"><MoreHorizontal size={19} /></button></div>
-              {activeWorkouts.length > 0 ? (
-                <div className="workout-grid">{activeWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.title}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more"><MoreHorizontal size={17} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time}</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" onClick={handleStartWorkout}>{workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+              <div className="section-heading workout-heading">
+                <div><h2>Treinos recomendados</h2><p>{selectedCategory ? `Filtrando por ${selectedCategory}.` : 'Baseados nos seus objetivos e histórico.'}</p></div>
+                {selectedCategory ? <button className="text-button" onClick={() => setSelectedCategory(null)}><X size={14} /> Limpar filtro</button> : <button className="icon-button"><MoreHorizontal size={19} /></button>}
+              </div>
+              {filteredWorkouts.length > 0 ? (
+                <div className="workout-grid">{filteredWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.title}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more"><MoreHorizontal size={17} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time}</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" onClick={handleStartWorkout}>{workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+              ) : activeWorkouts.length > 0 ? (
+                <div className="empty-state">
+                  <Grid2X2 size={30} />
+                  <h3>Nenhum treino em "{selectedCategory}"</h3>
+                  <p>Experimente outro atalho ou limpe o filtro para ver todos os treinos.</p>
+                  <button className="primary-button" onClick={() => setSelectedCategory(null)}>Ver todos os treinos</button>
+                </div>
               ) : (
                 <div className="empty-state">
                   <UserRound size={30} />
