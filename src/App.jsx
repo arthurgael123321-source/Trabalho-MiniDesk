@@ -53,16 +53,32 @@ const exercises = [
   { name: 'Tríceps na polia', sets: '3 séries', weight: '24 kg', icon: 'TP' },
 ]
 
+const lastWorkout = { title: 'Full body', date: 'Ontem à noite', duration: '32 min', calories: '260 kcal' }
+
+const shortcuts = [
+  { label: 'Força', icon: Flame },
+  { label: 'Cardio', icon: HeartPulse },
+  { label: 'Mobilidade', icon: Sparkles },
+  { label: 'Full body', icon: Dumbbell },
+]
+
 function App() {
   const [activeNav, setActiveNav] = useState('Visão geral')
   const [showModal, setShowModal] = useState(false)
   const [showNotice, setShowNotice] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [demoEmpty, setDemoEmpty] = useState(false)
 
   const handleStartWorkout = () => {
     setShowNotice(true)
     window.setTimeout(() => setShowNotice(false), 3200)
   }
+
+  const activeWorkouts = demoEmpty ? [] : workouts
+  const activeExercises = demoEmpty ? [] : exercises
+  const activeLastWorkout = demoEmpty ? null : lastWorkout
+  const weeklyTarget = week.filter(day => day.status !== 'rest').length
+  const weeklyCompleted = demoEmpty ? 0 : week.filter(day => day.status === 'done').length
 
   return (
     <div className="app-shell">
@@ -104,6 +120,7 @@ function App() {
           <div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>Visão geral</strong></div>
           <div className="top-actions">
             <button className="icon-button search-button" aria-label="Pesquisar"><Search size={18} /></button>
+            <button className={`icon-button demo-toggle ${demoEmpty ? 'active' : ''}`} aria-label="Alternar estado sem treinos" title="Simular usuário sem treinos" onClick={() => setDemoEmpty(value => !value)}><UserRound size={18} /></button>
             <button className="icon-button notification-button" aria-label="Notificações"><Bell size={18} /><i /></button>
             <div className="avatar">RM</div>
           </div>
@@ -113,6 +130,11 @@ function App() {
           <section className="welcome-row">
             <div><p className="eyebrow">QUARTA-FEIRA, 14 DE MAIO DE 2025</p><h1>Bom dia, Rafael <span>✦</span></h1><p className="muted">Pronto para transformar sua próxima sessão?</p></div>
             <button className="primary-button" onClick={() => setShowModal(true)}><Plus size={18} /> Novo treino</button>
+          </section>
+
+          <section className="shortcuts-row">
+            <span className="shortcuts-label"><Grid2X2 size={13} /> Atalhos rápidos</span>
+            <div className="shortcuts-list">{shortcuts.map(({ label, icon: Icon }) => <button className="shortcut-chip" key={label} onClick={handleStartWorkout}><Icon size={15} /> {label}</button>)}</div>
           </section>
 
           <section className="metrics-grid">
@@ -126,14 +148,33 @@ function App() {
             <div className="main-column">
               <div className="section-heading"><div><h2>Seu plano da semana</h2><p>Continue de onde você parou.</p></div><button className="text-button">Ver calendário <ArrowUpRight size={15} /></button></div>
               <div className="week-strip">{week.map(item => <button className={`day-cell ${item.status}`} key={item.date}><span>{item.day}</span><strong>{item.date}</strong>{item.status === 'done' ? <i>✓</i> : item.status === 'active' ? <i className="dot" /> : <i className="empty" />}</button>)}</div>
+              <div className="week-summary">
+                <div className="week-summary-item"><span>Treinos esta semana</span><strong>{weeklyCompleted}<small> / {weeklyTarget}</small></strong></div>
+                <div className="week-summary-item"><span><CalendarDays size={12} /> Último treino realizado</span>{activeLastWorkout ? <strong>{activeLastWorkout.title} <small>· {activeLastWorkout.date}</small></strong> : <strong className="empty-text">Nenhum treino realizado ainda</strong>}</div>
+              </div>
               <div className="section-heading workout-heading"><div><h2>Treinos recomendados</h2><p>Baseados nos seus objetivos e histórico.</p></div><button className="icon-button"><MoreHorizontal size={19} /></button></div>
-              <div className="workout-grid">{workouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.title}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more"><MoreHorizontal size={17} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time}</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" onClick={handleStartWorkout}>{workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+              {activeWorkouts.length > 0 ? (
+                <div className="workout-grid">{activeWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.title}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more"><MoreHorizontal size={17} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time}</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" onClick={handleStartWorkout}>{workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+              ) : (
+                <div className="empty-state">
+                  <UserRound size={30} />
+                  <h3>Nenhum treino por aqui ainda</h3>
+                  <p>Crie seu primeiro treino e comece a acompanhar sua evolução.</p>
+                  <button className="primary-button" onClick={() => setShowModal(true)}><Plus size={16} /> Criar primeiro treino</button>
+                </div>
+              )}
             </div>
             <aside className="right-column">
+              <div className="section-heading"><div><h2>Resumo do progresso</h2><p>Sua evolução recente.</p></div></div>
+              <div className="progress-summary">
+                <div><span>Sequência atual</span><strong>12 dias</strong></div>
+                <div><span>Treinos no mês</span><strong>8 / 12</strong></div>
+                <div><span>Tempo total</span><strong>6h 42m</strong></div>
+              </div>
               <div className="section-heading"><div><h2>Próximo objetivo</h2><p>Foco e consistência.</p></div><Target size={20} /></div>
               <div className="goal-card"><div className="goal-ring"><strong>68</strong><span>%</span></div><div><h3>Construir força</h3><p>Meta mensal</p></div><button aria-label="Mais opções"><MoreHorizontal size={17} /></button><div className="goal-stats"><span><strong>8</strong> de 12 treinos</span><span>até 31 mai</span></div></div>
               <div className="section-heading exercise-heading"><div><h2>Exercícios recentes</h2><p>Seu histórico de performance.</p></div><button className="text-button">Ver todos <ArrowUpRight size={15} /></button></div>
-              <div className="exercise-list">{exercises.map(exercise => <div className="exercise-row" key={exercise.name}><div className="exercise-icon">{exercise.icon}</div><div className="exercise-name"><strong>{exercise.name}</strong><span>{exercise.sets}</span></div><div className="exercise-weight"><strong>{exercise.weight}</strong><span>último</span></div><ChevronRight size={16} /></div>)}</div>
+              <div className="exercise-list">{activeExercises.length > 0 ? activeExercises.map(exercise => <div className="exercise-row" key={exercise.name}><div className="exercise-icon">{exercise.icon}</div><div className="exercise-name"><strong>{exercise.name}</strong><span>{exercise.sets}</span></div><div className="exercise-weight"><strong>{exercise.weight}</strong><span>último</span></div><ChevronRight size={16} /></div>) : <div className="empty-state small"><p>Nenhum exercício registrado ainda.</p></div>}</div>
               <div className="tip-card"><div className="tip-icon"><Sparkles size={18} /></div><div><span>DICA DO DIA</span><p>Descanse entre 60 e 90 segundos para maximizar seus ganhos de força.</p></div></div>
             </aside>
           </section>
