@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Activity,
   ArrowUpRight,
@@ -12,49 +12,51 @@ import {
   Grid2X2,
   HeartPulse,
   Home,
+  LogOut,
   Menu,
   MoreHorizontal,
   Plus,
+  Save,
   Search,
   Settings,
   Sparkles,
   Target,
+  Trash2,
   Trophy,
   UserRound,
   X,
 } from 'lucide-react'
+import Login from './Login'
+import {
+  clearSession,
+  createDefaultUserData,
+  findUserByEmail,
+  getSession,
+  getUserData,
+  saveUserData,
+  updateUserProfile,
+} from './storage'
 
 const navItems = [
-  { label: 'Visão geral', icon: Home },
-  { label: 'Meus treinos', icon: Dumbbell },
-  { label: 'Exercícios', icon: Activity },
-  { label: 'Progresso', icon: Trophy },
+  { label: 'Visão geral', icon: Home, view: 'overview' },
+  { label: 'Meus treinos', icon: Dumbbell, view: 'workouts' },
+  { label: 'Exercícios', icon: Activity, view: 'exercises' },
+  { label: 'Progresso', icon: Trophy, view: 'progress' },
 ]
 
-const week = [
-  { day: 'SEG', date: '12', status: 'done' },
-  { day: 'TER', date: '13', status: 'done' },
-  { day: 'QUA', date: '14', status: 'active' },
-  { day: 'QUI', date: '15', status: 'rest' },
-  { day: 'SEX', date: '16', status: 'planned' },
-  { day: 'SAB', date: '17', status: 'rest' },
-  { day: 'DOM', date: '18', status: 'rest' },
+const accountItems = [
+  { label: 'Configurações', icon: Settings, view: 'settings' },
+  { label: 'Saúde e metas', icon: HeartPulse, view: 'goals' },
 ]
 
-const workouts = [
-  { title: 'Força & potência', subtitle: 'Peito, ombros e tríceps', time: '45 min', level: 'Intermediário', progress: 72, tone: 'dark', category: 'Força' },
-  { title: 'HIIT cardio', subtitle: 'Corrida e intervalos', time: '28 min', level: 'Intermediário', progress: 0, tone: 'light', category: 'Cardio' },
-  { title: 'Full body', subtitle: 'Corpo inteiro', time: '32 min', level: 'Iniciante', progress: 38, tone: 'light', category: 'Full body' },
-  { title: 'Mobilidade', subtitle: 'Alongamento e core', time: '20 min', level: 'Todos os níveis', progress: 0, tone: 'outline', category: 'Mobilidade' },
-]
-
-const exercises = [
-  { name: 'Supino reto', sets: '4 séries', weight: '42 kg', icon: 'SR' },
-  { name: 'Desenvolvimento', sets: '3 séries', weight: '18 kg', icon: 'DS' },
-  { name: 'Tríceps na polia', sets: '3 séries', weight: '24 kg', icon: 'TP' },
-]
-
-const lastWorkout = { title: 'Full body', date: 'Ontem à noite', duration: '32 min', calories: '260 kcal' }
+const VIEW_LABELS = {
+  overview: 'Visão geral',
+  workouts: 'Meus treinos',
+  exercises: 'Exercícios',
+  progress: 'Progresso',
+  settings: 'Configurações',
+  goals: 'Saúde e metas',
+}
 
 const shortcuts = [
   { label: 'Força', icon: Flame },
@@ -63,29 +65,183 @@ const shortcuts = [
   { label: 'Full body', icon: Dumbbell },
 ]
 
+const WORKOUT_PRESETS = {
+  'Força': { title: 'Treino de força', subtitle: 'Foco em potência muscular', time: 40, level: 'Iniciante', calories: 300, tone: 'light' },
+  'Cardio': { title: 'Treino de condicionamento', subtitle: 'Resistência cardiovascular', time: 30, level: 'Iniciante', calories: 280, tone: 'light' },
+  'Mobilidade': { title: 'Treino de mobilidade', subtitle: 'Alongamento guiado', time: 20, level: 'Todos os níveis', calories: 110, tone: 'outline' },
+}
+
+const notifications = [
+  { title: 'Treino sugerido', body: 'Baseado no seu histórico, que tal um HIIT hoje?' },
+  { title: 'Meta semanal', body: 'Você está perto de bater sua meta da semana!' },
+]
+
+function getInitials(name) {
+  const parts = name.trim().split(/\s+/).slice(0, 2)
+  return parts.map(part => part[0]?.toUpperCase() || '').join('') || '?'
+}
+
 function App() {
-  const [activeNav, setActiveNav] = useState('Visão geral')
-  const [showModal, setShowModal] = useState(false)
-  const [showNotice, setShowNotice] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
+  const [userData, setUserData] = useState(null)
+
+  const [view, setView] = useState('overview')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [demoEmpty, setDemoEmpty] = useState(false)
+  const [showModal, setShowModal] = useState(false)
+  const [toast, setToast] = useState(null)
   const [selectedCategory, setSelectedCategory] = useState(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [hasNotifications, setHasNotifications] = useState(true)
 
-  const handleStartWorkout = () => {
-    setShowNotice(true)
-    window.setTimeout(() => setShowNotice(false), 3200)
+  useEffect(() => {
+    const email = getSession()
+    if (email) {
+      const user = findUserByEmail(email)
+      if (user) {
+        setCurrentUser({ name: user.name, email: user.email })
+        setUserData(getUserData(user.email) || createDefaultUserData())
+      } else {
+        clearSession()
+      }
+    }
+    setAuthChecked(true)
+  }, [])
+
+  useEffect(() => {
+    if (currentUser && userData) {
+      saveUserData(currentUser.email, userData)
+    }
+  }, [currentUser, userData])
+
+  if (!authChecked) return null
+
+  if (!currentUser || !userData) {
+    return <Login onAuthenticated={(user) => {
+      setCurrentUser(user)
+      setUserData(getUserData(user.email) || createDefaultUserData())
+      setView('overview')
+    }} />
   }
 
-  const handleSelectCategory = (label) => {
-    setSelectedCategory(current => (current === label ? null : label))
+  const triggerToast = (title, message) => {
+    setToast({ title, message })
+    window.setTimeout(() => setToast(null), 3200)
   }
 
-  const activeWorkouts = demoEmpty ? [] : workouts
-  const activeExercises = demoEmpty ? [] : exercises
-  const activeLastWorkout = demoEmpty ? null : lastWorkout
-  const weeklyTarget = week.filter(day => day.status !== 'rest').length
-  const weeklyCompleted = demoEmpty ? 0 : week.filter(day => day.status === 'done').length
-  const filteredWorkouts = selectedCategory ? activeWorkouts.filter(workout => workout.category === selectedCategory) : activeWorkouts
+  const handleLogout = () => {
+    clearSession()
+    setCurrentUser(null)
+    setUserData(null)
+    setView('overview')
+    setMenuOpen(false)
+  }
+
+  const startWorkout = (id) => {
+    const workout = userData.workouts.find(item => item.id === id)
+    if (!workout || workout.progress >= 100) return
+    const hadActiveToday = userData.week.some(day => day.status === 'active')
+    setUserData(prev => ({
+      ...prev,
+      workouts: prev.workouts.map(item => item.id === id ? { ...item, progress: 100 } : item),
+      week: prev.week.map(day => day.status === 'active' ? { ...day, status: 'done' } : day),
+      lastWorkout: { title: workout.title, date: 'Agora mesmo', duration: `${workout.time} min`, calories: `${workout.calories} kcal` },
+      stats: {
+        ...prev.stats,
+        streakDays: hadActiveToday ? prev.stats.streakDays + 1 : prev.stats.streakDays,
+        totalMinutes: prev.stats.totalMinutes + workout.time,
+        calories: prev.stats.calories + workout.calories,
+      },
+      goal: { ...prev.goal, current: Math.min(prev.goal.current + 1, prev.goal.target) },
+    }))
+    triggerToast('Treino concluído!', `Mandou bem, ${currentUser.name.split(' ')[0]}. Continue assim.`)
+  }
+
+  const createWorkout = (categoryLabel) => {
+    const preset = WORKOUT_PRESETS[categoryLabel]
+    if (!preset) return
+    const workout = { id: `w${Date.now()}`, category: categoryLabel, progress: 0, ...preset }
+    setUserData(prev => ({ ...prev, workouts: [workout, ...prev.workouts] }))
+    setShowModal(false)
+    triggerToast('Treino criado', `"${preset.title}" foi adicionado à sua lista.`)
+  }
+
+  const deleteWorkout = (id) => {
+    setUserData(prev => ({ ...prev, workouts: prev.workouts.filter(item => item.id !== id) }))
+  }
+
+  const addExercise = (event) => {
+    event.preventDefault()
+    const form = event.target
+    const data = new FormData(form)
+    const name = data.get('name').trim()
+    const sets = data.get('sets').trim()
+    const weight = data.get('weight').trim()
+    if (!name || !sets || !weight) return
+    const exercise = { id: `e${Date.now()}`, name, sets, weight, icon: name.slice(0, 2).toUpperCase() }
+    setUserData(prev => ({ ...prev, exercises: [exercise, ...prev.exercises] }))
+    form.reset()
+  }
+
+  const deleteExercise = (id) => {
+    setUserData(prev => ({ ...prev, exercises: prev.exercises.filter(item => item.id !== id) }))
+  }
+
+  const updateGoal = (event) => {
+    event.preventDefault()
+    const data = new FormData(event.target)
+    const title = data.get('title').trim()
+    const target = Number(data.get('target'))
+    const deadline = data.get('deadline').trim()
+    if (!title || !target) return
+    setUserData(prev => ({ ...prev, goal: { ...prev.goal, title, target, deadline, current: Math.min(prev.goal.current, target) } }))
+    triggerToast('Meta atualizada', 'Sua meta mensal foi salva.')
+  }
+
+  const updateProfileName = (event) => {
+    event.preventDefault()
+    const data = new FormData(event.target)
+    const name = data.get('name').trim()
+    if (!name) return
+    updateUserProfile(currentUser.email, { name })
+    setCurrentUser(prev => ({ ...prev, name }))
+    triggerToast('Perfil atualizado', 'Seu nome foi salvo.')
+  }
+
+  const handleDayClick = (day) => {
+    const messages = {
+      done: `Treino concluído em ${day.day} (${day.date}).`,
+      active: 'Seu treino de hoje está pronto. Bora começar!',
+      planned: `Treino planejado para ${day.day} (${day.date}).`,
+      rest: `${day.day} (${day.date}) é dia de descanso.`,
+    }
+    triggerToast(day.day, messages[day.status])
+  }
+
+  const toggleNotifications = () => {
+    setNotifOpen(value => !value)
+    setHasNotifications(false)
+  }
+
+  const query = searchQuery.trim().toLowerCase()
+  const matchesQuery = (text) => !query || text.toLowerCase().includes(query)
+
+  const categoryWorkouts = selectedCategory ? userData.workouts.filter(item => item.category === selectedCategory) : userData.workouts
+  const overviewWorkouts = categoryWorkouts.filter(item => matchesQuery(item.title))
+  const allWorkouts = userData.workouts.filter(item => matchesQuery(item.title))
+  const allExercises = userData.exercises.filter(item => matchesQuery(item.name))
+  const recentExercises = userData.exercises.slice(0, 3)
+
+  const weeklyTarget = userData.week.filter(day => day.status !== 'rest').length
+  const weeklyCompleted = userData.week.filter(day => day.status === 'done').length
+  const goalPercent = Math.round((userData.goal.current / userData.goal.target) * 100)
+  const initials = getInitials(currentUser.name)
+  const firstName = currentUser.name.split(' ')[0]
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite'
+  const todayLabel = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()
 
   return (
     <div className="app-shell">
@@ -95,111 +251,217 @@ function App() {
           <span>fit<span>tracker</span></span>
         </div>
         <div className="workspace-switcher">
-          <div className="avatar avatar-small">RM</div>
-          <div><strong>Rafael Martins</strong><small>Plano premium</small></div>
+          <div className="avatar avatar-small">{initials}</div>
+          <div><strong>{currentUser.name}</strong><small>Plano gratuito</small></div>
           <ChevronDown size={15} />
         </div>
         <nav className="main-nav" aria-label="Navegação principal">
           <span className="nav-label">MENU PRINCIPAL</span>
-          {navItems.map(({ label, icon: Icon }) => (
-            <button className={`nav-item ${activeNav === label ? 'selected' : ''}`} key={label} onClick={() => { setActiveNav(label); setMenuOpen(false) }}>
-              <Icon size={18} /><span>{label}</span>{label === 'Progresso' && <span className="nav-badge">2</span>}
+          {navItems.map(({ label, icon: Icon, view: itemView }) => (
+            <button className={`nav-item ${view === itemView ? 'selected' : ''}`} key={label} onClick={() => { setView(itemView); setMenuOpen(false) }}>
+              <Icon size={18} /><span>{label}</span>
             </button>
           ))}
           <span className="nav-label nav-label-spaced">CONTA</span>
-          <button className="nav-item"><Settings size={18} /><span>Configurações</span></button>
-          <button className="nav-item"><HeartPulse size={18} /><span>Saúde e metas</span></button>
+          {accountItems.map(({ label, icon: Icon, view: itemView }) => (
+            <button className={`nav-item ${view === itemView ? 'selected' : ''}`} key={label} onClick={() => { setView(itemView); setMenuOpen(false) }}>
+              <Icon size={18} /><span>{label}</span>
+            </button>
+          ))}
         </nav>
         <div className="sidebar-bottom">
           <div className="upgrade-card">
             <Sparkles size={17} />
             <strong>Desbloqueie seu potencial</strong>
             <p>Tenha acesso a planos personalizados.</p>
-            <button>Conhecer Premium <ArrowUpRight size={14} /></button>
+            <button onClick={() => triggerToast('Em breve', 'O plano Premium estará disponível em breve.')}>Conhecer Premium <ArrowUpRight size={14} /></button>
           </div>
-          <button className="profile-row"><div className="avatar">RM</div><span><strong>Rafael Martins</strong><small>Ver perfil</small></span><MoreHorizontal size={17} /></button>
+          <button className="profile-row" onClick={() => { setView('settings'); setMenuOpen(false) }}><div className="avatar">{initials}</div><span><strong>{currentUser.name}</strong><small>Ver perfil</small></span><MoreHorizontal size={17} /></button>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
           <button className="mobile-menu" aria-label="Abrir menu" onClick={() => setMenuOpen(!menuOpen)}><Menu size={21} /></button>
-          <div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>Visão geral</strong></div>
+          <div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{VIEW_LABELS[view]}</strong></div>
           <div className="top-actions">
-            <button className="icon-button search-button" aria-label="Pesquisar"><Search size={18} /></button>
-            <button className={`icon-button demo-toggle ${demoEmpty ? 'active' : ''}`} aria-label="Alternar estado sem treinos" title="Simular usuário sem treinos" onClick={() => setDemoEmpty(value => !value)}><UserRound size={18} /></button>
-            <button className="icon-button notification-button" aria-label="Notificações"><Bell size={18} /><i /></button>
-            <div className="avatar">RM</div>
+            {searchOpen && <input className="search-input" autoFocus value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="Buscar treinos ou exercícios..." />}
+            <button className="icon-button search-button" aria-label="Pesquisar" onClick={() => { setSearchOpen(value => !value); setSearchQuery('') }}><Search size={18} /></button>
+            <div className="notification-wrap">
+              <button className="icon-button notification-button" aria-label="Notificações" onClick={toggleNotifications}><Bell size={18} />{hasNotifications && <i />}</button>
+              {notifOpen && (
+                <div className="notif-panel">
+                  {notifications.map(item => <p key={item.title}><strong>{item.title}</strong>{item.body}</p>)}
+                </div>
+              )}
+            </div>
+            <button className="avatar avatar-button" onClick={() => setView('settings')} aria-label="Ir para configurações">{initials}</button>
           </div>
         </header>
 
         <div className="page-wrap">
-          <section className="welcome-row">
-            <div><p className="eyebrow">QUARTA-FEIRA, 14 DE MAIO DE 2025</p><h1>Bom dia, Rafael <span>✦</span></h1><p className="muted">Pronto para transformar sua próxima sessão?</p></div>
-            <button className="primary-button" onClick={() => setShowModal(true)}><Plus size={18} /> Novo treino</button>
-          </section>
+          {view === 'overview' && (
+            <>
+              <section className="welcome-row">
+                <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}, {firstName} <span>✦</span></h1><p className="muted">Pronto para transformar sua próxima sessão?</p></div>
+                <button className="primary-button" onClick={() => setShowModal(true)}><Plus size={18} /> Novo treino</button>
+              </section>
 
-          <section className="shortcuts-row">
-            <span className="shortcuts-label"><Grid2X2 size={13} /> Atalhos rápidos</span>
-            <div className="shortcuts-list">{shortcuts.map(({ label, icon: Icon }) => <button className={`shortcut-chip ${selectedCategory === label ? 'active' : ''}`} key={label} onClick={() => handleSelectCategory(label)}><Icon size={15} /> {label}</button>)}</div>
-          </section>
+              <section className="shortcuts-row">
+                <span className="shortcuts-label"><Grid2X2 size={13} /> Atalhos rápidos</span>
+                <div className="shortcuts-list">{shortcuts.map(({ label, icon: Icon }) => <button className={`shortcut-chip ${selectedCategory === label ? 'active' : ''}`} key={label} onClick={() => setSelectedCategory(current => current === label ? null : label)}><Icon size={15} /> {label}</button>)}</div>
+              </section>
 
-          <section className="metrics-grid">
-            <article className="metric-card featured"><div className="metric-head"><span>Sequência atual</span><Flame size={18} /></div><div className="metric-value">12 <small>dias</small></div><div className="metric-foot"><span className="trend">↗ +3 dias</span> <span>vs. semana passada</span></div><div className="sparkline" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /></div></article>
-            <article className="metric-card"><div className="metric-head"><span>Treinos este mês</span><Target size={18} /></div><div className="metric-value">08 <small>/ 12</small></div><div className="progress-bar"><span style={{ width: '66%' }} /></div><div className="metric-foot"><span>4 treinos restantes</span><span>66%</span></div></article>
-            <article className="metric-card"><div className="metric-head"><span>Tempo total</span><Clock3 size={18} /></div><div className="metric-value">06<small>h 42m</small></div><div className="metric-foot"><span className="trend">↗ +12%</span> <span>vs. mês passado</span></div></article>
-            <article className="metric-card"><div className="metric-head"><span>Calorias queimadas</span><Activity size={18} /></div><div className="metric-value">3.240 <small>kcal</small></div><div className="metric-foot"><span className="trend">↗ +8%</span> <span>ótimo ritmo</span></div></article>
-          </section>
+              <section className="metrics-grid">
+                <article className="metric-card featured"><div className="metric-head"><span>Sequência atual</span><Flame size={18} /></div><div className="metric-value">{userData.stats.streakDays} <small>dias</small></div><div className="metric-foot"><span>Continue treinando para manter o ritmo</span></div><div className="sparkline" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /></div></article>
+                <article className="metric-card"><div className="metric-head"><span>Treinos este mês</span><Target size={18} /></div><div className="metric-value">{String(userData.goal.current).padStart(2, '0')} <small>/ {userData.goal.target}</small></div><div className="progress-bar"><span style={{ width: `${goalPercent}%` }} /></div><div className="metric-foot"><span>{Math.max(userData.goal.target - userData.goal.current, 0)} treinos restantes</span><span>{goalPercent}%</span></div></article>
+                <article className="metric-card"><div className="metric-head"><span>Tempo total</span><Clock3 size={18} /></div><div className="metric-value">{Math.floor(userData.stats.totalMinutes / 60)}<small>h {userData.stats.totalMinutes % 60}m</small></div><div className="metric-foot"><span>Desde que você começou</span></div></article>
+                <article className="metric-card"><div className="metric-head"><span>Calorias queimadas</span><Activity size={18} /></div><div className="metric-value">{userData.stats.calories.toLocaleString('pt-BR')} <small>kcal</small></div><div className="metric-foot"><span>Baseado nos treinos concluídos</span></div></article>
+              </section>
 
-          <section className="content-grid">
-            <div className="main-column">
-              <div className="section-heading"><div><h2>Seu plano da semana</h2><p>Continue de onde você parou.</p></div><button className="text-button">Ver calendário <ArrowUpRight size={15} /></button></div>
-              <div className="week-strip">{week.map(item => <button className={`day-cell ${item.status}`} key={item.date}><span>{item.day}</span><strong>{item.date}</strong>{item.status === 'done' ? <i>✓</i> : item.status === 'active' ? <i className="dot" /> : <i className="empty" />}</button>)}</div>
-              <div className="week-summary">
-                <div className="week-summary-item"><span>Treinos esta semana</span><strong>{weeklyCompleted}<small> / {weeklyTarget}</small></strong></div>
-                <div className="week-summary-item"><span><CalendarDays size={12} /> Último treino realizado</span>{activeLastWorkout ? <strong>{activeLastWorkout.title} <small>· {activeLastWorkout.date}</small></strong> : <strong className="empty-text">Nenhum treino realizado ainda</strong>}</div>
-              </div>
-              <div className="section-heading workout-heading">
-                <div><h2>Treinos recomendados</h2><p>{selectedCategory ? `Filtrando por ${selectedCategory}.` : 'Baseados nos seus objetivos e histórico.'}</p></div>
-                {selectedCategory ? <button className="text-button" onClick={() => setSelectedCategory(null)}><X size={14} /> Limpar filtro</button> : <button className="icon-button"><MoreHorizontal size={19} /></button>}
-              </div>
-              {filteredWorkouts.length > 0 ? (
-                <div className="workout-grid">{filteredWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.title}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more"><MoreHorizontal size={17} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time}</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" onClick={handleStartWorkout}>{workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
-              ) : activeWorkouts.length > 0 ? (
-                <div className="empty-state">
-                  <Grid2X2 size={30} />
-                  <h3>Nenhum treino em "{selectedCategory}"</h3>
-                  <p>Experimente outro atalho ou limpe o filtro para ver todos os treinos.</p>
-                  <button className="primary-button" onClick={() => setSelectedCategory(null)}>Ver todos os treinos</button>
+              <section className="content-grid">
+                <div className="main-column">
+                  <div className="section-heading"><div><h2>Seu plano da semana</h2><p>Continue de onde você parou.</p></div><button className="text-button" onClick={() => setView('progress')}>Ver calendário <ArrowUpRight size={15} /></button></div>
+                  <div className="week-strip">{userData.week.map(item => <button className={`day-cell ${item.status}`} key={item.date} onClick={() => handleDayClick(item)}><span>{item.day}</span><strong>{item.date}</strong>{item.status === 'done' ? <i>✓</i> : item.status === 'active' ? <i className="dot" /> : <i className="empty" />}</button>)}</div>
+                  <div className="week-summary">
+                    <div className="week-summary-item"><span>Treinos esta semana</span><strong>{weeklyCompleted}<small> / {weeklyTarget}</small></strong></div>
+                    <div className="week-summary-item"><span><CalendarDays size={12} /> Último treino realizado</span>{userData.lastWorkout ? <strong>{userData.lastWorkout.title} <small>· {userData.lastWorkout.date}</small></strong> : <strong className="empty-text">Nenhum treino realizado ainda</strong>}</div>
+                  </div>
+                  <div className="section-heading workout-heading">
+                    <div><h2>Treinos recomendados</h2><p>{selectedCategory ? `Filtrando por ${selectedCategory}.` : 'Baseados nos seus objetivos e histórico.'}</p></div>
+                    {selectedCategory ? <button className="text-button" onClick={() => setSelectedCategory(null)}><X size={14} /> Limpar filtro</button> : <button className="icon-button" onClick={() => setView('workouts')}><MoreHorizontal size={19} /></button>}
+                  </div>
+                  {overviewWorkouts.length > 0 ? (
+                    <div className="workout-grid">{overviewWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more"><MoreHorizontal size={17} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkout(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+                  ) : userData.workouts.length > 0 ? (
+                    <div className="empty-state">
+                      <Grid2X2 size={30} />
+                      <h3>Nenhum treino encontrado</h3>
+                      <p>Experimente outro atalho ou limpe o filtro para ver todos os treinos.</p>
+                      <button className="primary-button" onClick={() => { setSelectedCategory(null); setSearchQuery('') }}>Ver todos os treinos</button>
+                    </div>
+                  ) : (
+                    <div className="empty-state">
+                      <UserRound size={30} />
+                      <h3>Nenhum treino por aqui ainda</h3>
+                      <p>Crie seu primeiro treino e comece a acompanhar sua evolução.</p>
+                      <button className="primary-button" onClick={() => setShowModal(true)}><Plus size={16} /> Criar primeiro treino</button>
+                    </div>
+                  )}
                 </div>
+                <aside className="right-column">
+                  <div className="section-heading"><div><h2>Resumo do progresso</h2><p>Sua evolução recente.</p></div></div>
+                  <div className="progress-summary">
+                    <div><span>Sequência atual</span><strong>{userData.stats.streakDays} dias</strong></div>
+                    <div><span>Treinos no mês</span><strong>{userData.goal.current} / {userData.goal.target}</strong></div>
+                    <div><span>Tempo total</span><strong>{Math.floor(userData.stats.totalMinutes / 60)}h {userData.stats.totalMinutes % 60}m</strong></div>
+                  </div>
+                  <div className="section-heading"><div><h2>Próximo objetivo</h2><p>Foco e consistência.</p></div><Target size={20} /></div>
+                  <div className="goal-card"><div className="goal-ring"><strong>{goalPercent}</strong><span>%</span></div><div><h3>{userData.goal.title}</h3><p>Meta mensal</p></div><button aria-label="Mais opções" onClick={() => setView('goals')}><MoreHorizontal size={17} /></button><div className="goal-stats"><span><strong>{userData.goal.current}</strong> de {userData.goal.target} treinos</span><span>até {userData.goal.deadline}</span></div></div>
+                  <div className="section-heading exercise-heading"><div><h2>Exercícios recentes</h2><p>Seu histórico de performance.</p></div><button className="text-button" onClick={() => setView('exercises')}>Ver todos <ArrowUpRight size={15} /></button></div>
+                  <div className="exercise-list">{recentExercises.length > 0 ? recentExercises.map(exercise => <div className="exercise-row" key={exercise.id}><div className="exercise-icon">{exercise.icon}</div><div className="exercise-name"><strong>{exercise.name}</strong><span>{exercise.sets}</span></div><div className="exercise-weight"><strong>{exercise.weight}</strong><span>último</span></div><ChevronRight size={16} /></div>) : <div className="empty-state small"><p>Nenhum exercício registrado ainda.</p></div>}</div>
+                  <div className="tip-card"><div className="tip-icon"><Sparkles size={18} /></div><div><span>DICA DO DIA</span><p>Descanse entre 60 e 90 segundos para maximizar seus ganhos de força.</p></div></div>
+                </aside>
+              </section>
+            </>
+          )}
+
+          {view === 'workouts' && (
+            <section>
+              <div className="section-heading"><div><h2>Meus treinos</h2><p>Gerencie todos os seus treinos.</p></div><button className="primary-button" onClick={() => setShowModal(true)}><Plus size={16} /> Novo treino</button></div>
+              {allWorkouts.length > 0 ? (
+                <div className="workout-grid">{allWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.category}</span><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div></div><div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div><button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkout(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
               ) : (
                 <div className="empty-state">
                   <UserRound size={30} />
-                  <h3>Nenhum treino por aqui ainda</h3>
-                  <p>Crie seu primeiro treino e comece a acompanhar sua evolução.</p>
-                  <button className="primary-button" onClick={() => setShowModal(true)}><Plus size={16} /> Criar primeiro treino</button>
+                  <h3>Nenhum treino encontrado</h3>
+                  <p>Crie um novo treino ou ajuste sua busca.</p>
+                  <button className="primary-button" onClick={() => setShowModal(true)}><Plus size={16} /> Criar treino</button>
                 </div>
               )}
-            </div>
-            <aside className="right-column">
-              <div className="section-heading"><div><h2>Resumo do progresso</h2><p>Sua evolução recente.</p></div></div>
-              <div className="progress-summary">
-                <div><span>Sequência atual</span><strong>12 dias</strong></div>
-                <div><span>Treinos no mês</span><strong>8 / 12</strong></div>
-                <div><span>Tempo total</span><strong>6h 42m</strong></div>
+            </section>
+          )}
+
+          {view === 'exercises' && (
+            <section>
+              <div className="section-heading"><div><h2>Exercícios</h2><p>Seu catálogo de exercícios.</p></div></div>
+              <form className="inline-form" onSubmit={addExercise}>
+                <input name="name" placeholder="Nome do exercício" required />
+                <input name="sets" placeholder="Ex: 4 séries" required />
+                <input name="weight" placeholder="Ex: 40 kg" required />
+                <button className="primary-button" type="submit"><Plus size={16} /> Adicionar</button>
+              </form>
+              <div className="exercise-list wide">
+                {allExercises.length > 0 ? allExercises.map(exercise => (
+                  <div className="exercise-row" key={exercise.id}>
+                    <div className="exercise-icon">{exercise.icon}</div>
+                    <div className="exercise-name"><strong>{exercise.name}</strong><span>{exercise.sets}</span></div>
+                    <div className="exercise-weight"><strong>{exercise.weight}</strong><span>registrado</span></div>
+                    <button className="card-more" onClick={() => deleteExercise(exercise.id)} aria-label="Remover exercício"><Trash2 size={15} /></button>
+                  </div>
+                )) : <div className="empty-state small"><p>Nenhum exercício encontrado.</p></div>}
               </div>
-              <div className="section-heading"><div><h2>Próximo objetivo</h2><p>Foco e consistência.</p></div><Target size={20} /></div>
-              <div className="goal-card"><div className="goal-ring"><strong>68</strong><span>%</span></div><div><h3>Construir força</h3><p>Meta mensal</p></div><button aria-label="Mais opções"><MoreHorizontal size={17} /></button><div className="goal-stats"><span><strong>8</strong> de 12 treinos</span><span>até 31 mai</span></div></div>
-              <div className="section-heading exercise-heading"><div><h2>Exercícios recentes</h2><p>Seu histórico de performance.</p></div><button className="text-button">Ver todos <ArrowUpRight size={15} /></button></div>
-              <div className="exercise-list">{activeExercises.length > 0 ? activeExercises.map(exercise => <div className="exercise-row" key={exercise.name}><div className="exercise-icon">{exercise.icon}</div><div className="exercise-name"><strong>{exercise.name}</strong><span>{exercise.sets}</span></div><div className="exercise-weight"><strong>{exercise.weight}</strong><span>último</span></div><ChevronRight size={16} /></div>) : <div className="empty-state small"><p>Nenhum exercício registrado ainda.</p></div>}</div>
-              <div className="tip-card"><div className="tip-icon"><Sparkles size={18} /></div><div><span>DICA DO DIA</span><p>Descanse entre 60 e 90 segundos para maximizar seus ganhos de força.</p></div></div>
-            </aside>
-          </section>
+            </section>
+          )}
+
+          {view === 'progress' && (
+            <section>
+              <div className="section-heading"><div><h2>Progresso</h2><p>Seu histórico e evolução.</p></div></div>
+              <div className="metrics-grid">
+                <article className="metric-card featured"><div className="metric-head"><span>Sequência atual</span><Flame size={18} /></div><div className="metric-value">{userData.stats.streakDays} <small>dias</small></div></article>
+                <article className="metric-card"><div className="metric-head"><span>Treinos este mês</span><Target size={18} /></div><div className="metric-value">{String(userData.goal.current).padStart(2, '0')} <small>/ {userData.goal.target}</small></div><div className="progress-bar"><span style={{ width: `${goalPercent}%` }} /></div></article>
+                <article className="metric-card"><div className="metric-head"><span>Tempo total</span><Clock3 size={18} /></div><div className="metric-value">{Math.floor(userData.stats.totalMinutes / 60)}<small>h {userData.stats.totalMinutes % 60}m</small></div></article>
+                <article className="metric-card"><div className="metric-head"><span>Calorias queimadas</span><Activity size={18} /></div><div className="metric-value">{userData.stats.calories.toLocaleString('pt-BR')} <small>kcal</small></div></article>
+              </div>
+              <div className="week-strip">{userData.week.map(item => <button className={`day-cell ${item.status}`} key={item.date} onClick={() => handleDayClick(item)}><span>{item.day}</span><strong>{item.date}</strong>{item.status === 'done' ? <i>✓</i> : item.status === 'active' ? <i className="dot" /> : <i className="empty" />}</button>)}</div>
+              <div className="goal-card standalone"><div className="goal-ring"><strong>{goalPercent}</strong><span>%</span></div><div><h3>{userData.goal.title}</h3><p>Meta mensal</p></div><div className="goal-stats"><span><strong>{userData.goal.current}</strong> de {userData.goal.target} treinos</span><span>até {userData.goal.deadline}</span></div></div>
+            </section>
+          )}
+
+          {view === 'settings' && (
+            <section className="narrow">
+              <div className="section-heading"><div><h2>Configurações</h2><p>Gerencie sua conta.</p></div></div>
+              <form className="settings-form" onSubmit={updateProfileName}>
+                <label>Nome<input name="name" defaultValue={currentUser.name} /></label>
+                <label>Email<input value={currentUser.email} disabled /></label>
+                <button className="primary-button" type="submit"><Save size={16} /> Salvar alterações</button>
+              </form>
+              <button className="logout-button" onClick={handleLogout}><LogOut size={16} /> Sair da conta</button>
+            </section>
+          )}
+
+          {view === 'goals' && (
+            <section className="narrow">
+              <div className="section-heading"><div><h2>Saúde e metas</h2><p>Defina sua meta mensal.</p></div></div>
+              <form className="settings-form" onSubmit={updateGoal}>
+                <label>Título da meta<input name="title" defaultValue={userData.goal.title} /></label>
+                <label>Meta de treinos no mês<input name="target" type="number" min="1" defaultValue={userData.goal.target} /></label>
+                <label>Prazo<input name="deadline" defaultValue={userData.goal.deadline} /></label>
+                <button className="primary-button" type="submit"><Save size={16} /> Salvar meta</button>
+              </form>
+              <div className="goal-card standalone"><div className="goal-ring"><strong>{goalPercent}</strong><span>%</span></div><div><h3>{userData.goal.title}</h3><p>Meta mensal</p></div><div className="goal-stats"><span><strong>{userData.goal.current}</strong> de {userData.goal.target} treinos</span><span>até {userData.goal.deadline}</span></div></div>
+            </section>
+          )}
         </div>
       </main>
 
-      {showNotice && <div className="toast"><div className="toast-check">✓</div><div><strong>Treino iniciado</strong><span>Boa sessão, Rafael. Você consegue!</span></div><button onClick={() => setShowNotice(false)} aria-label="Fechar"><X size={16} /></button></div>}
-      {showModal && <div className="modal-backdrop" onClick={() => setShowModal(false)}><div className="modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={() => setShowModal(false)} aria-label="Fechar modal"><X size={18} /></button><div className="modal-icon"><Dumbbell size={21} /></div><p className="eyebrow">NOVO PLANO</p><h2>Monte seu próximo treino</h2><p className="muted">Escolha um foco para começar com uma sugestão personalizada.</p><div className="goal-options"><button><Flame size={18} /><span><strong>Força</strong><small>Ganhar potência e massa</small></span><ChevronRight size={16} /></button><button><HeartPulse size={18} /><span><strong>Condicionamento</strong><small>Mais resistência no dia a dia</small></span><ChevronRight size={16} /></button><button><Sparkles size={18} /><span><strong>Mobilidade</strong><small>Movimente-se melhor</small></span><ChevronRight size={16} /></button></div><button className="primary-button modal-button" onClick={() => { setShowModal(false); handleStartWorkout() }}>Criar treino <ArrowUpRight size={16} /></button></div></div>}
+      {toast && <div className="toast"><div className="toast-check">✓</div><div><strong>{toast.title}</strong><span>{toast.message}</span></div><button onClick={() => setToast(null)} aria-label="Fechar"><X size={16} /></button></div>}
+      {showModal && (
+        <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+          <div className="modal" onClick={event => event.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowModal(false)} aria-label="Fechar modal"><X size={18} /></button>
+            <div className="modal-icon"><Dumbbell size={21} /></div>
+            <p className="eyebrow">NOVO PLANO</p>
+            <h2>Monte seu próximo treino</h2>
+            <p className="muted">Escolha um foco para começar com uma sugestão personalizada.</p>
+            <div className="goal-options">
+              <button onClick={() => createWorkout('Força')}><Flame size={18} /><span><strong>Força</strong><small>Ganhar potência e massa</small></span><ChevronRight size={16} /></button>
+              <button onClick={() => createWorkout('Cardio')}><HeartPulse size={18} /><span><strong>Condicionamento</strong><small>Mais resistência no dia a dia</small></span><ChevronRight size={16} /></button>
+              <button onClick={() => createWorkout('Mobilidade')}><Sparkles size={18} /><span><strong>Mobilidade</strong><small>Movimente-se melhor</small></span><ChevronRight size={16} /></button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
