@@ -15,6 +15,7 @@ import {
   Grid2X2,
   HeartPulse,
   Home,
+  ListChecks,
   Lock,
   LogOut,
   Menu,
@@ -122,7 +123,8 @@ function getInitials(name) {
 
 function normalizeUserData(data) {
   if (!data) return createDefaultUserData()
-  return { plan: 'free', planCycle: null, supportTickets: [], ...data }
+  const base = { plan: 'free', planCycle: null, supportTickets: [], ...data }
+  return { ...base, workouts: (base.workouts || []).map(item => ({ checklist: [], ...item })) }
 }
 
 function App() {
@@ -139,6 +141,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [notifOpen, setNotifOpen] = useState(false)
   const [hasNotifications, setHasNotifications] = useState(true)
+  const [activeSessionId, setActiveSessionId] = useState(null)
+  const [checklistEditorId, setChecklistEditorId] = useState(null)
 
   useEffect(() => {
     const email = getSession()
@@ -203,6 +207,61 @@ function App() {
     triggerToast('Treino concluído!', `Mandou bem, ${currentUser.name.split(' ')[0]}. Continue assim.`)
   }
 
+  const startWorkoutSession = (id) => {
+    const workout = userData.workouts.find(item => item.id === id)
+    if (!workout || workout.progress >= 100) return
+    if (!workout.checklist || workout.checklist.length === 0) {
+      startWorkout(id)
+      return
+    }
+    setActiveSessionId(id)
+  }
+
+  const toggleExerciseInChecklist = (workoutId, exercise) => {
+    setUserData(prev => ({
+      ...prev,
+      workouts: prev.workouts.map(item => {
+        if (item.id !== workoutId) return item
+        const current = item.checklist || []
+        const exists = current.some(chk => chk.exerciseId === exercise.id)
+        const checklist = exists
+          ? current.filter(chk => chk.exerciseId !== exercise.id)
+          : [...current, { exerciseId: exercise.id, name: exercise.name, done: false }]
+        const progress = checklist.length > 0
+          ? Math.round((checklist.filter(chk => chk.done).length / checklist.length) * 100)
+          : item.progress
+        return { ...item, checklist, progress }
+      }),
+    }))
+  }
+
+  const toggleSessionExercise = (workoutId, exerciseId) => {
+    const workout = userData.workouts.find(item => item.id === workoutId)
+    if (!workout) return
+    const checklist = workout.checklist.map(chk => chk.exerciseId === exerciseId ? { ...chk, done: !chk.done } : chk)
+    const progress = Math.round((checklist.filter(chk => chk.done).length / checklist.length) * 100)
+    const justCompleted = progress >= 100 && workout.progress < 100
+    const hadActiveToday = userData.week.some(day => day.status === 'active')
+    setUserData(prev => ({
+      ...prev,
+      workouts: prev.workouts.map(item => item.id === workoutId ? { ...item, checklist, progress } : item),
+      ...(justCompleted ? {
+        week: prev.week.map(day => day.status === 'active' ? { ...day, status: 'done' } : day),
+        lastWorkout: { title: workout.title, date: 'Agora mesmo', duration: `${workout.time} min`, calories: `${workout.calories} kcal` },
+        stats: {
+          ...prev.stats,
+          streakDays: hadActiveToday ? prev.stats.streakDays + 1 : prev.stats.streakDays,
+          totalMinutes: prev.stats.totalMinutes + workout.time,
+          calories: prev.stats.calories + workout.calories,
+        },
+        goal: { ...prev.goal, current: Math.min(prev.goal.current + 1, prev.goal.target) },
+      } : {}),
+    }))
+    if (justCompleted) {
+      triggerToast('Treino concluído!', `Você completou toda a checklist de "${workout.title}". Mandou bem, ${currentUser.name.split(' ')[0]}!`)
+    }
+  }
+
   const createWorkout = (categoryLabel) => {
     const preset = WORKOUT_PRESETS[categoryLabel]
     if (!preset) return
@@ -211,7 +270,7 @@ function App() {
       triggerToast('Limite do plano gratuito', `Você atingiu o limite de ${FREE_WORKOUT_LIMIT} treinos. Assine o Premium para treinos ilimitados.`)
       return
     }
-    const workout = { id: `w${Date.now()}`, category: categoryLabel, progress: 0, ...preset }
+    const workout = { id: `w${Date.now()}`, category: categoryLabel, progress: 0, checklist: [], ...preset }
     setUserData(prev => ({ ...prev, workouts: [workout, ...prev.workouts] }))
     setShowModal(false)
     triggerToast('Treino criado', `"${preset.title}" foi adicionado à sua lista.`)
@@ -232,6 +291,7 @@ function App() {
       id: `w${Date.now()}`,
       category: targetCategory,
       progress: 0,
+      checklist: [],
       ...preset,
       title: `${preset.title} personalizado`,
       subtitle: `Sugerido com base na sua meta "${userData.goal.title}"`,
@@ -483,7 +543,7 @@ function App() {
                     {selectedCategory ? <button className="text-button" onClick={() => setSelectedCategory(null)}><X size={14} /> Limpar filtro</button> : <button className="icon-button" onClick={() => setView('workouts')}><MoreHorizontal size={19} /></button>}
                   </div>
                   {overviewWorkouts.length > 0 ? (
-                    <div className="workout-grid">{overviewWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkout(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+                    <div className="workout-grid">{overviewWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div>{workout.checklist?.length > 0 && <div className="workout-checklist-hint"><ListChecks size={12} /> {workout.checklist.filter(chk => chk.done).length}/{workout.checklist.length} exercícios</div>}</div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkoutSession(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
                   ) : userData.workouts.length > 0 ? (
                     <div className="empty-state">
                       <Grid2X2 size={30} />
@@ -532,7 +592,7 @@ function App() {
                 </div>
               </div>
               {allWorkouts.length > 0 ? (
-                <div className="workout-grid">{allWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.category}</span><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div></div><div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div><button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkout(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+                <div className="workout-grid">{allWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.category}</span><div className="card-top-actions"><button className="card-more" onClick={() => setChecklistEditorId(workout.id)} aria-label="Editar checklist"><ListChecks size={15} /></button><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div>{workout.checklist?.length > 0 && <div className="workout-checklist-hint"><ListChecks size={12} /> {workout.checklist.filter(chk => chk.done).length}/{workout.checklist.length} exercícios</div>}</div><div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div><button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkoutSession(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
               ) : (
                 <div className="empty-state">
                   <UserRound size={30} />
@@ -714,6 +774,66 @@ function App() {
           </div>
         </div>
       )}
+      {checklistEditorId && (() => {
+        const workout = userData.workouts.find(item => item.id === checklistEditorId)
+        if (!workout) return null
+        return (
+          <div className="modal-backdrop" onClick={() => setChecklistEditorId(null)}>
+            <div className="modal" onClick={event => event.stopPropagation()}>
+              <button className="modal-close" onClick={() => setChecklistEditorId(null)} aria-label="Fechar modal"><X size={18} /></button>
+              <div className="modal-icon"><ListChecks size={21} /></div>
+              <p className="eyebrow">CHECKLIST</p>
+              <h2>Exercícios de "{workout.title}"</h2>
+              <p className="muted">Escolha exercícios do seu catálogo para montar a checklist deste treino. Ao concluir todos ao treinar, ele fica 100%.</p>
+              {userData.exercises.length > 0 ? (
+                <div className="checklist-picker">
+                  {userData.exercises.map(exercise => {
+                    const checked = (workout.checklist || []).some(chk => chk.exerciseId === exercise.id)
+                    return (
+                      <label className={`checklist-picker-row ${checked ? 'checked' : ''}`} key={exercise.id}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleExerciseInChecklist(workout.id, exercise)} />
+                        <span><strong>{exercise.name}</strong><small>{exercise.sets} · {exercise.weight}</small></span>
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="empty-state small"><p>Você ainda não tem exercícios cadastrados. Adicione em "Exercícios" primeiro.</p></div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+      {activeSessionId && (() => {
+        const workout = userData.workouts.find(item => item.id === activeSessionId)
+        if (!workout) return null
+        const doneCount = workout.checklist.filter(chk => chk.done).length
+        return (
+          <div className="modal-backdrop" onClick={() => setActiveSessionId(null)}>
+            <div className="modal" onClick={event => event.stopPropagation()}>
+              <button className="modal-close" onClick={() => setActiveSessionId(null)} aria-label="Fechar modal"><X size={18} /></button>
+              <div className="modal-icon"><Dumbbell size={21} /></div>
+              <p className="eyebrow">SESSÃO DE TREINO</p>
+              <h2>{workout.title}</h2>
+              <p className="muted">Marque cada exercício conforme for concluindo. Ao completar todos, o treino fica 100%.</p>
+              <div className="progress-bar session-progress"><span style={{ width: `${workout.progress}%` }} /></div>
+              <div className="session-checklist">
+                {workout.checklist.map(item => (
+                  <label className={`session-check-row ${item.done ? 'done' : ''}`} key={item.exerciseId}>
+                    <input type="checkbox" checked={item.done} onChange={() => toggleSessionExercise(workout.id, item.exerciseId)} />
+                    <span className="session-check-name">{item.name}</span>
+                  </label>
+                ))}
+              </div>
+              {workout.progress >= 100 ? (
+                <div className="session-complete"><Check size={16} /> Treino concluído!</div>
+              ) : (
+                <p className="session-hint">{doneCount} de {workout.checklist.length} exercícios concluídos.</p>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
