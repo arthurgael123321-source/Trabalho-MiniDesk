@@ -75,6 +75,9 @@ export function saveUserData(email, data) {
 
 export function createDefaultUserData() {
   return {
+    plan: 'free',
+    planCycle: null,
+    supportTickets: [],
     goal: { title: 'Construir força', current: 8, target: 12, deadline: '31 mai' },
     stats: { streakDays: 12, totalMinutes: 402, calories: 3240 },
     week: [

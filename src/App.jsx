@@ -4,20 +4,25 @@ import {
   ArrowUpRight,
   Bell,
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronRight,
   Clock3,
+  Crown,
+  Download,
   Dumbbell,
   Flame,
   Grid2X2,
   HeartPulse,
   Home,
+  Lock,
   LogOut,
   Menu,
   MoreHorizontal,
   Plus,
   Save,
   Search,
+  Send,
   Settings,
   Sparkles,
   Target,
@@ -47,6 +52,7 @@ const navItems = [
 const accountItems = [
   { label: 'Configurações', icon: Settings, view: 'settings' },
   { label: 'Saúde e metas', icon: HeartPulse, view: 'goals' },
+  { label: 'Premium', icon: Crown, view: 'premium' },
 ]
 
 const VIEW_LABELS = {
@@ -56,7 +62,40 @@ const VIEW_LABELS = {
   progress: 'Progresso',
   settings: 'Configurações',
   goals: 'Saúde e metas',
+  premium: 'Premium',
 }
+
+const FREE_WORKOUT_LIMIT = 6
+const FREE_EXERCISE_LIMIT = 10
+
+const PREMIUM_PLANS = [
+  {
+    id: 'free',
+    title: 'Gratuito',
+    price: 'R$ 0',
+    period: '/sempre',
+    description: 'Para quem está começando a treinar.',
+    features: [`Até ${FREE_WORKOUT_LIMIT} treinos salvos`, `Até ${FREE_EXERCISE_LIMIT} exercícios registrados`, 'Acompanhamento semanal', 'Metas mensais'],
+  },
+  {
+    id: 'monthly',
+    title: 'Premium mensal',
+    price: 'R$ 19,90',
+    period: '/mês',
+    description: 'Recursos avançados, cancele quando quiser.',
+    features: ['Treinos e exercícios ilimitados', 'Treino personalizado gerado com seu histórico', 'Métricas avançadas de progresso', 'Suporte prioritário (resposta em até 2h)'],
+  },
+  {
+    id: 'annual',
+    title: 'Premium anual',
+    price: 'R$ 14,90',
+    period: '/mês',
+    description: 'Economize pagando anualmente.',
+    features: ['Tudo do Premium mensal', 'Exportação de relatórios em arquivo', '2 meses grátis pagando à vista'],
+    badge: 'MAIS POPULAR',
+    highlight: true,
+  },
+]
 
 const shortcuts = [
   { label: 'Força', icon: Flame },
@@ -81,6 +120,11 @@ function getInitials(name) {
   return parts.map(part => part[0]?.toUpperCase() || '').join('') || '?'
 }
 
+function normalizeUserData(data) {
+  if (!data) return createDefaultUserData()
+  return { plan: 'free', planCycle: null, supportTickets: [], ...data }
+}
+
 function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
@@ -102,7 +146,7 @@ function App() {
       const user = findUserByEmail(email)
       if (user) {
         setCurrentUser({ name: user.name, email: user.email })
-        setUserData(getUserData(user.email) || createDefaultUserData())
+        setUserData(normalizeUserData(getUserData(user.email)))
       } else {
         clearSession()
       }
@@ -121,7 +165,7 @@ function App() {
   if (!currentUser || !userData) {
     return <Login onAuthenticated={(user) => {
       setCurrentUser(user)
-      setUserData(getUserData(user.email) || createDefaultUserData())
+      setUserData(normalizeUserData(getUserData(user.email)))
       setView('overview')
     }} />
   }
@@ -162,10 +206,38 @@ function App() {
   const createWorkout = (categoryLabel) => {
     const preset = WORKOUT_PRESETS[categoryLabel]
     if (!preset) return
+    if (userData.plan !== 'premium' && userData.workouts.length >= FREE_WORKOUT_LIMIT) {
+      setShowModal(false)
+      triggerToast('Limite do plano gratuito', `Você atingiu o limite de ${FREE_WORKOUT_LIMIT} treinos. Assine o Premium para treinos ilimitados.`)
+      return
+    }
     const workout = { id: `w${Date.now()}`, category: categoryLabel, progress: 0, ...preset }
     setUserData(prev => ({ ...prev, workouts: [workout, ...prev.workouts] }))
     setShowModal(false)
     triggerToast('Treino criado', `"${preset.title}" foi adicionado à sua lista.`)
+  }
+
+  const generatePersonalizedWorkout = () => {
+    if (userData.plan !== 'premium') {
+      setView('premium')
+      triggerToast('Recurso Premium', 'Assine o Premium para gerar treinos personalizados com base no seu histórico.')
+      return
+    }
+    const categories = Object.keys(WORKOUT_PRESETS)
+    const counts = categories.map(cat => ({ cat, count: userData.workouts.filter(item => item.category === cat).length }))
+    counts.sort((a, b) => a.count - b.count)
+    const targetCategory = counts[0].cat
+    const preset = WORKOUT_PRESETS[targetCategory]
+    const workout = {
+      id: `w${Date.now()}`,
+      category: targetCategory,
+      progress: 0,
+      ...preset,
+      title: `${preset.title} personalizado`,
+      subtitle: `Sugerido com base na sua meta "${userData.goal.title}"`,
+    }
+    setUserData(prev => ({ ...prev, workouts: [workout, ...prev.workouts] }))
+    triggerToast('Treino personalizado gerado', `"${workout.title}" foi criado com base no seu histórico de treinos.`)
   }
 
   const deleteWorkout = (id) => {
@@ -180,6 +252,10 @@ function App() {
     const sets = data.get('sets').trim()
     const weight = data.get('weight').trim()
     if (!name || !sets || !weight) return
+    if (userData.plan !== 'premium' && userData.exercises.length >= FREE_EXERCISE_LIMIT) {
+      triggerToast('Limite do plano gratuito', `Você atingiu o limite de ${FREE_EXERCISE_LIMIT} exercícios. Assine o Premium para registros ilimitados.`)
+      return
+    }
     const exercise = { id: `e${Date.now()}`, name, sets, weight, icon: name.slice(0, 2).toUpperCase() }
     setUserData(prev => ({ ...prev, exercises: [exercise, ...prev.exercises] }))
     form.reset()
@@ -210,6 +286,59 @@ function App() {
     triggerToast('Perfil atualizado', 'Seu nome foi salvo.')
   }
 
+  const subscribePlan = (planId) => {
+    const plan = PREMIUM_PLANS.find(item => item.id === planId)
+    if (!plan || plan.id === 'free') return
+    setUserData(prev => ({ ...prev, plan: 'premium', planCycle: planId }))
+    triggerToast('Assinatura confirmada', `Bem-vindo ao ${plan.title}!`)
+  }
+
+  const cancelPlan = () => {
+    if (userData.plan !== 'premium') return
+    setUserData(prev => ({ ...prev, plan: 'free', planCycle: null }))
+    triggerToast('Assinatura cancelada', 'Você voltou para o plano gratuito.')
+  }
+
+  const exportReport = () => {
+    if (!(userData.plan === 'premium' && userData.planCycle === 'annual')) return
+    const report = {
+      geradoEm: new Date().toISOString(),
+      usuario: currentUser.name,
+      email: currentUser.email,
+      meta: userData.goal,
+      estatisticas: userData.stats,
+      treinos: userData.workouts,
+      exercicios: userData.exercises,
+      semana: userData.week,
+    }
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `feettrack-relatorio-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    triggerToast('Relatório exportado', 'O download do seu relatório começou.')
+  }
+
+  const submitSupportTicket = (event) => {
+    event.preventDefault()
+    const data = new FormData(event.target)
+    const message = data.get('message').trim()
+    if (!message) return
+    const ticket = {
+      id: `t${Date.now()}`,
+      message,
+      date: new Date().toLocaleString('pt-BR'),
+      status: userData.plan === 'premium' ? 'Prioritário' : 'Padrão',
+    }
+    setUserData(prev => ({ ...prev, supportTickets: [ticket, ...(prev.supportTickets || [])] }))
+    event.target.reset()
+    triggerToast('Mensagem enviada', userData.plan === 'premium' ? 'Nosso suporte prioritário responde em até 2h.' : 'Nossa equipe responde em até 48h.')
+  }
+
   const handleDayClick = (day) => {
     const messages = {
       done: `Treino concluído em ${day.day} (${day.date}).`,
@@ -234,6 +363,19 @@ function App() {
   const allExercises = userData.exercises.filter(item => matchesQuery(item.name))
   const recentExercises = userData.exercises.slice(0, 3)
 
+  const categoryBreakdown = Object.keys(WORKOUT_PRESETS).map(cat => {
+    const items = userData.workouts.filter(item => item.category === cat)
+    return {
+      category: cat,
+      count: items.length,
+      minutes: items.reduce((sum, item) => sum + item.time, 0),
+      calories: items.reduce((sum, item) => sum + item.calories, 0),
+    }
+  }).filter(item => item.count > 0)
+  const avgProgress = userData.workouts.length > 0
+    ? Math.round(userData.workouts.reduce((sum, item) => sum + item.progress, 0) / userData.workouts.length)
+    : 0
+
   const weeklyTarget = userData.week.filter(day => day.status !== 'rest').length
   const weeklyCompleted = userData.week.filter(day => day.status === 'done').length
   const goalPercent = Math.round((userData.goal.current / userData.goal.target) * 100)
@@ -252,7 +394,7 @@ function App() {
         </div>
         <div className="workspace-switcher">
           <div className="avatar avatar-small">{initials}</div>
-          <div><strong>{currentUser.name}</strong><small>Plano gratuito</small></div>
+          <div><strong>{currentUser.name}</strong><small>{userData.plan === 'premium' ? 'Plano Premium' : 'Plano gratuito'}</small></div>
           <ChevronDown size={15} />
         </div>
         <nav className="main-nav" aria-label="Navegação principal">
@@ -270,12 +412,21 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="upgrade-card">
-            <Sparkles size={17} />
-            <strong>Desbloqueie seu potencial</strong>
-            <p>Tenha acesso a planos personalizados.</p>
-            <button onClick={() => triggerToast('Em breve', 'O plano Premium estará disponível em breve.')}>Conhecer Premium <ArrowUpRight size={14} /></button>
-          </div>
+          {userData.plan === 'premium' ? (
+            <div className="upgrade-card premium-active">
+              <Crown size={17} />
+              <strong>Você é Premium ✦</strong>
+              <p>Aproveite todos os recursos avançados.</p>
+              <button onClick={() => { setView('premium'); setMenuOpen(false) }}>Gerenciar assinatura <ArrowUpRight size={14} /></button>
+            </div>
+          ) : (
+            <div className="upgrade-card">
+              <Sparkles size={17} />
+              <strong>Desbloqueie seu potencial</strong>
+              <p>Tenha acesso a planos personalizados.</p>
+              <button onClick={() => { setView('premium'); setMenuOpen(false) }}>Conhecer Premium <ArrowUpRight size={14} /></button>
+            </div>
+          )}
           <button className="profile-row" onClick={() => { setView('settings'); setMenuOpen(false) }}><div className="avatar">{initials}</div><span><strong>{currentUser.name}</strong><small>Ver perfil</small></span><MoreHorizontal size={17} /></button>
         </div>
       </aside>
@@ -332,7 +483,7 @@ function App() {
                     {selectedCategory ? <button className="text-button" onClick={() => setSelectedCategory(null)}><X size={14} /> Limpar filtro</button> : <button className="icon-button" onClick={() => setView('workouts')}><MoreHorizontal size={19} /></button>}
                   </div>
                   {overviewWorkouts.length > 0 ? (
-                    <div className="workout-grid">{overviewWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more"><MoreHorizontal size={17} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkout(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+                    <div className="workout-grid">{overviewWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div></div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkout(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
                   ) : userData.workouts.length > 0 ? (
                     <div className="empty-state">
                       <Grid2X2 size={30} />
@@ -368,7 +519,18 @@ function App() {
 
           {view === 'workouts' && (
             <section>
-              <div className="section-heading"><div><h2>Meus treinos</h2><p>Gerencie todos os seus treinos.</p></div><button className="primary-button" onClick={() => setShowModal(true)}><Plus size={16} /> Novo treino</button></div>
+              <div className="section-heading">
+                <div>
+                  <h2>Meus treinos</h2>
+                  <p>{userData.plan === 'premium' ? 'Treinos ilimitados no seu plano Premium.' : `Gerencie seus treinos (${userData.workouts.length}/${FREE_WORKOUT_LIMIT} usados no plano gratuito).`}</p>
+                </div>
+                <div className="heading-actions">
+                  <button className="secondary-button" onClick={generatePersonalizedWorkout}>
+                    <Sparkles size={15} /> Gerar personalizado {userData.plan !== 'premium' && <Lock size={12} />}
+                  </button>
+                  <button className="primary-button" onClick={() => setShowModal(true)}><Plus size={16} /> Novo treino</button>
+                </div>
+              </div>
               {allWorkouts.length > 0 ? (
                 <div className="workout-grid">{allWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.category}</span><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div></div><div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div><button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkout(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
               ) : (
@@ -415,6 +577,35 @@ function App() {
               </div>
               <div className="week-strip">{userData.week.map(item => <button className={`day-cell ${item.status}`} key={item.date} onClick={() => handleDayClick(item)}><span>{item.day}</span><strong>{item.date}</strong>{item.status === 'done' ? <i>✓</i> : item.status === 'active' ? <i className="dot" /> : <i className="empty" />}</button>)}</div>
               <div className="goal-card standalone"><div className="goal-ring"><strong>{goalPercent}</strong><span>%</span></div><div><h3>{userData.goal.title}</h3><p>Meta mensal</p></div><div className="goal-stats"><span><strong>{userData.goal.current}</strong> de {userData.goal.target} treinos</span><span>até {userData.goal.deadline}</span></div></div>
+
+              <div className="section-heading"><div><h2>Métricas avançadas</h2><p>Detalhamento por categoria de treino.</p></div>{userData.plan !== 'premium' && <Crown size={16} />}</div>
+              {userData.plan === 'premium' ? (
+                categoryBreakdown.length > 0 ? (
+                  <div className="advanced-metrics-grid">
+                    {categoryBreakdown.map(item => (
+                      <div className="advanced-metric-card" key={item.category}>
+                        <span>{item.category}</span>
+                        <strong>{item.count} treino{item.count > 1 ? 's' : ''}</strong>
+                        <div className="advanced-metric-foot"><span>{item.minutes} min</span><span>{item.calories} kcal</span></div>
+                      </div>
+                    ))}
+                    <div className="advanced-metric-card highlight">
+                      <span>Progresso médio</span>
+                      <strong>{avgProgress}%</strong>
+                      <div className="advanced-metric-foot"><span>Em todos os treinos</span></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="empty-state small"><p>Complete treinos para ver suas métricas avançadas.</p></div>
+                )
+              ) : (
+                <div className="locked-card">
+                  <Lock size={22} />
+                  <h3>Métricas avançadas são exclusivas do Premium</h3>
+                  <p>Veja o detalhamento por categoria, progresso médio e muito mais.</p>
+                  <button className="primary-button" onClick={() => setView('premium')}>Ver planos Premium</button>
+                </div>
+              )}
             </section>
           )}
 
@@ -427,6 +618,28 @@ function App() {
                 <button className="primary-button" type="submit"><Save size={16} /> Salvar alterações</button>
               </form>
               <button className="logout-button" onClick={handleLogout}><LogOut size={16} /> Sair da conta</button>
+
+              <div className="section-heading">
+                <div>
+                  <h2>Suporte</h2>
+                  <p>{userData.plan === 'premium' ? 'Atendimento prioritário — resposta em até 2h.' : 'Atendimento padrão — resposta em até 48h.'}</p>
+                </div>
+                {userData.plan === 'premium' && <span className="priority-badge">PRIORITÁRIO</span>}
+              </div>
+              <form className="settings-form" onSubmit={submitSupportTicket}>
+                <label>Mensagem<textarea name="message" rows={3} placeholder="Como podemos ajudar?" required /></label>
+                <button className="primary-button" type="submit"><Send size={16} /> Enviar mensagem</button>
+              </form>
+              {userData.supportTickets?.length > 0 && (
+                <div className="ticket-list">
+                  {userData.supportTickets.map(ticket => (
+                    <div className="ticket-row" key={ticket.id}>
+                      <div><strong>{ticket.status}</strong><span>{ticket.date}</span></div>
+                      <p>{ticket.message}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
@@ -440,6 +653,45 @@ function App() {
                 <button className="primary-button" type="submit"><Save size={16} /> Salvar meta</button>
               </form>
               <div className="goal-card standalone"><div className="goal-ring"><strong>{goalPercent}</strong><span>%</span></div><div><h3>{userData.goal.title}</h3><p>Meta mensal</p></div><div className="goal-stats"><span><strong>{userData.goal.current}</strong> de {userData.goal.target} treinos</span><span>até {userData.goal.deadline}</span></div></div>
+            </section>
+          )}
+
+          {view === 'premium' && (
+            <section className="premium-page">
+              <div className="section-heading"><div><h2>Planos Premium</h2><p>Desbloqueie recursos avançados e leve seus treinos pro próximo nível.</p></div></div>
+              {userData.plan === 'premium' && (
+                <div className="premium-status-card">
+                  <div className="premium-status-icon"><Crown size={18} /></div>
+                  <div><h3>Você é Premium</h3><p>Ciclo atual: {userData.planCycle === 'annual' ? 'Anual' : 'Mensal'} · Obrigado por apoiar o FitTracker.</p></div>
+                  {userData.planCycle === 'annual' && <button className="secondary-button light" onClick={exportReport}><Download size={14} /> Exportar relatório</button>}
+                </div>
+              )}
+              {userData.plan === 'premium' && userData.planCycle !== 'annual' && (
+                <p className="upsell-hint">Assine o plano anual para desbloquear a exportação de relatórios.</p>
+              )}
+              <div className="plans-grid">
+                {PREMIUM_PLANS.map(plan => {
+                  const isCurrent = plan.id === 'free' ? userData.plan !== 'premium' : userData.plan === 'premium' && userData.planCycle === plan.id
+                  return (
+                    <article className={`plan-card ${plan.highlight ? 'highlight' : ''} ${isCurrent ? 'current' : ''}`} key={plan.id}>
+                      {plan.badge && <span className="plan-badge">{plan.badge}</span>}
+                      <h3>{plan.title}</h3>
+                      <div className="plan-price"><strong>{plan.price}</strong><span>{plan.period}</span></div>
+                      <p className="plan-desc">{plan.description}</p>
+                      <ul className="plan-features">
+                        {plan.features.map(feature => <li key={feature}><Check size={13} /> {feature}</li>)}
+                      </ul>
+                      <button
+                        className="plan-button"
+                        disabled={isCurrent}
+                        onClick={() => plan.id === 'free' ? cancelPlan() : subscribePlan(plan.id)}
+                      >
+                        {isCurrent ? 'Plano atual' : plan.id === 'free' ? 'Voltar ao gratuito' : `Assinar ${plan.title.split(' ')[1]}`}
+                      </button>
+                    </article>
+                  )
+                })}
+              </div>
             </section>
           )}
         </div>
