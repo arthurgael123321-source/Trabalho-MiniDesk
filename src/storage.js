@@ -78,6 +78,7 @@ export function createDefaultUserData() {
     plan: 'free',
     planCycle: null,
     supportTickets: [],
+    history: [],
     goal: { title: 'Construir força', current: 8, target: 12, deadline: '31 mai' },
     stats: { streakDays: 12, totalMinutes: 402, calories: 3240 },
     week: [

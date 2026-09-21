@@ -20,6 +20,7 @@ import {
   LogOut,
   Menu,
   MoreHorizontal,
+  Pencil,
   Plus,
   Save,
   Search,
@@ -27,6 +28,7 @@ import {
   Settings,
   Sparkles,
   Target,
+  Timer,
   Trash2,
   Trophy,
   UserRound,
@@ -109,7 +111,10 @@ const WORKOUT_PRESETS = {
   'Força': { title: 'Treino de força', subtitle: 'Foco em potência muscular', time: 40, level: 'Iniciante', calories: 300, tone: 'light' },
   'Cardio': { title: 'Treino de condicionamento', subtitle: 'Resistência cardiovascular', time: 30, level: 'Iniciante', calories: 280, tone: 'light' },
   'Mobilidade': { title: 'Treino de mobilidade', subtitle: 'Alongamento guiado', time: 20, level: 'Todos os níveis', calories: 110, tone: 'outline' },
+  'Full body': { title: 'Treino full body', subtitle: 'Corpo inteiro em uma sessão', time: 35, level: 'Intermediário', calories: 320, tone: 'light' },
 }
+
+const REST_DURATION = 60
 
 const notifications = [
   { title: 'Treino sugerido', body: 'Baseado no seu histórico, que tal um HIIT hoje?' },
@@ -123,7 +128,7 @@ function getInitials(name) {
 
 function normalizeUserData(data) {
   if (!data) return createDefaultUserData()
-  const base = { plan: 'free', planCycle: null, supportTickets: [], ...data }
+  const base = { plan: 'free', planCycle: null, supportTickets: [], history: [], ...data }
   return { ...base, workouts: (base.workouts || []).map(item => ({ checklist: [], ...item })) }
 }
 
@@ -143,6 +148,8 @@ function App() {
   const [hasNotifications, setHasNotifications] = useState(true)
   const [activeSessionId, setActiveSessionId] = useState(null)
   const [checklistEditorId, setChecklistEditorId] = useState(null)
+  const [restSeconds, setRestSeconds] = useState(null)
+  const [editingExerciseId, setEditingExerciseId] = useState(null)
 
   useEffect(() => {
     const email = getSession()
@@ -163,6 +170,16 @@ function App() {
       saveUserData(currentUser.email, userData)
     }
   }, [currentUser, userData])
+
+  useEffect(() => {
+    setRestSeconds(null)
+  }, [activeSessionId])
+
+  useEffect(() => {
+    if (restSeconds === null || restSeconds <= 0) return undefined
+    const timer = window.setTimeout(() => setRestSeconds(value => (value !== null ? value - 1 : null)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [restSeconds])
 
   if (!authChecked) return null
 
@@ -187,6 +204,15 @@ function App() {
     setMenuOpen(false)
   }
 
+  const buildHistoryEntry = (workout) => ({
+    id: `h${Date.now()}`,
+    title: workout.title,
+    category: workout.category,
+    date: new Date().toLocaleString('pt-BR'),
+    duration: `${workout.time} min`,
+    calories: `${workout.calories} kcal`,
+  })
+
   const startWorkout = (id) => {
     const workout = userData.workouts.find(item => item.id === id)
     if (!workout || workout.progress >= 100) return
@@ -196,6 +222,7 @@ function App() {
       workouts: prev.workouts.map(item => item.id === id ? { ...item, progress: 100 } : item),
       week: prev.week.map(day => day.status === 'active' ? { ...day, status: 'done' } : day),
       lastWorkout: { title: workout.title, date: 'Agora mesmo', duration: `${workout.time} min`, calories: `${workout.calories} kcal` },
+      history: [buildHistoryEntry(workout), ...(prev.history || [])].slice(0, 40),
       stats: {
         ...prev.stats,
         streakDays: hadActiveToday ? prev.stats.streakDays + 1 : prev.stats.streakDays,
@@ -238,6 +265,8 @@ function App() {
   const toggleSessionExercise = (workoutId, exerciseId) => {
     const workout = userData.workouts.find(item => item.id === workoutId)
     if (!workout) return
+    const target = workout.checklist.find(chk => chk.exerciseId === exerciseId)
+    const turningOn = Boolean(target && !target.done)
     const checklist = workout.checklist.map(chk => chk.exerciseId === exerciseId ? { ...chk, done: !chk.done } : chk)
     const progress = Math.round((checklist.filter(chk => chk.done).length / checklist.length) * 100)
     const justCompleted = progress >= 100 && workout.progress < 100
@@ -248,6 +277,7 @@ function App() {
       ...(justCompleted ? {
         week: prev.week.map(day => day.status === 'active' ? { ...day, status: 'done' } : day),
         lastWorkout: { title: workout.title, date: 'Agora mesmo', duration: `${workout.time} min`, calories: `${workout.calories} kcal` },
+        history: [buildHistoryEntry(workout), ...(prev.history || [])].slice(0, 40),
         stats: {
           ...prev.stats,
           streakDays: hadActiveToday ? prev.stats.streakDays + 1 : prev.stats.streakDays,
@@ -258,7 +288,10 @@ function App() {
       } : {}),
     }))
     if (justCompleted) {
+      setRestSeconds(null)
       triggerToast('Treino concluído!', `Você completou toda a checklist de "${workout.title}". Mandou bem, ${currentUser.name.split(' ')[0]}!`)
+    } else {
+      setRestSeconds(turningOn ? REST_DURATION : null)
     }
   }
 
@@ -323,6 +356,25 @@ function App() {
 
   const deleteExercise = (id) => {
     setUserData(prev => ({ ...prev, exercises: prev.exercises.filter(item => item.id !== id) }))
+  }
+
+  const updateExercise = (event) => {
+    event.preventDefault()
+    const data = new FormData(event.target)
+    const name = data.get('name').trim()
+    const sets = data.get('sets').trim()
+    const weight = data.get('weight').trim()
+    if (!name || !sets || !weight) return
+    setUserData(prev => ({
+      ...prev,
+      exercises: prev.exercises.map(item => item.id === editingExerciseId ? { ...item, name, sets, weight, icon: name.slice(0, 2).toUpperCase() } : item),
+      workouts: prev.workouts.map(workout => ({
+        ...workout,
+        checklist: (workout.checklist || []).map(chk => chk.exerciseId === editingExerciseId ? { ...chk, name } : chk),
+      })),
+    }))
+    setEditingExerciseId(null)
+    triggerToast('Exercício atualizado', 'As alterações foram salvas.')
   }
 
   const updateGoal = (event) => {
@@ -619,7 +671,10 @@ function App() {
                     <div className="exercise-icon">{exercise.icon}</div>
                     <div className="exercise-name"><strong>{exercise.name}</strong><span>{exercise.sets}</span></div>
                     <div className="exercise-weight"><strong>{exercise.weight}</strong><span>registrado</span></div>
-                    <button className="card-more" onClick={() => deleteExercise(exercise.id)} aria-label="Remover exercício"><Trash2 size={15} /></button>
+                    <div className="card-top-actions">
+                      <button className="card-more" onClick={() => setEditingExerciseId(exercise.id)} aria-label="Editar exercício"><Pencil size={14} /></button>
+                      <button className="card-more" onClick={() => deleteExercise(exercise.id)} aria-label="Remover exercício"><Trash2 size={15} /></button>
+                    </div>
                   </div>
                 )) : <div className="empty-state small"><p>Nenhum exercício encontrado.</p></div>}
               </div>
@@ -665,6 +720,21 @@ function App() {
                   <p>Veja o detalhamento por categoria, progresso médio e muito mais.</p>
                   <button className="primary-button" onClick={() => setView('premium')}>Ver planos Premium</button>
                 </div>
+              )}
+
+              <div className="section-heading"><div><h2>Histórico de treinos</h2><p>Suas últimas sessões concluídas.</p></div></div>
+              {userData.history?.length > 0 ? (
+                <div className="history-list">
+                  {userData.history.map(entry => (
+                    <div className="history-row" key={entry.id}>
+                      <div className="history-icon"><Check size={14} /></div>
+                      <div className="history-info"><strong>{entry.title}</strong><span>{entry.category} · {entry.date}</span></div>
+                      <div className="history-meta"><span>{entry.duration}</span><span>{entry.calories}</span></div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state small"><p>Nenhum treino concluído ainda. Complete um treino para ver seu histórico aqui.</p></div>
               )}
             </section>
           )}
@@ -770,10 +840,31 @@ function App() {
               <button onClick={() => createWorkout('Força')}><Flame size={18} /><span><strong>Força</strong><small>Ganhar potência e massa</small></span><ChevronRight size={16} /></button>
               <button onClick={() => createWorkout('Cardio')}><HeartPulse size={18} /><span><strong>Condicionamento</strong><small>Mais resistência no dia a dia</small></span><ChevronRight size={16} /></button>
               <button onClick={() => createWorkout('Mobilidade')}><Sparkles size={18} /><span><strong>Mobilidade</strong><small>Movimente-se melhor</small></span><ChevronRight size={16} /></button>
+              <button onClick={() => createWorkout('Full body')}><Dumbbell size={18} /><span><strong>Full body</strong><small>Corpo inteiro em uma sessão</small></span><ChevronRight size={16} /></button>
             </div>
           </div>
         </div>
       )}
+      {editingExerciseId && (() => {
+        const exercise = userData.exercises.find(item => item.id === editingExerciseId)
+        if (!exercise) return null
+        return (
+          <div className="modal-backdrop" onClick={() => setEditingExerciseId(null)}>
+            <div className="modal" onClick={event => event.stopPropagation()}>
+              <button className="modal-close" onClick={() => setEditingExerciseId(null)} aria-label="Fechar modal"><X size={18} /></button>
+              <div className="modal-icon"><Pencil size={21} /></div>
+              <p className="eyebrow">EDITAR EXERCÍCIO</p>
+              <h2>{exercise.name}</h2>
+              <form className="settings-form" onSubmit={updateExercise}>
+                <label>Nome<input name="name" defaultValue={exercise.name} required /></label>
+                <label>Séries<input name="sets" defaultValue={exercise.sets} required /></label>
+                <label>Carga<input name="weight" defaultValue={exercise.weight} required /></label>
+                <button className="primary-button" type="submit"><Save size={16} /> Salvar alterações</button>
+              </form>
+            </div>
+          </div>
+        )
+      })()}
       {checklistEditorId && (() => {
         const workout = userData.workouts.find(item => item.id === checklistEditorId)
         if (!workout) return null
@@ -817,13 +908,30 @@ function App() {
               <h2>{workout.title}</h2>
               <p className="muted">Marque cada exercício conforme for concluindo. Ao completar todos, o treino fica 100%.</p>
               <div className="progress-bar session-progress"><span style={{ width: `${workout.progress}%` }} /></div>
+              {restSeconds !== null && (
+                <div className={`rest-timer ${restSeconds <= 0 ? 'done' : ''}`}>
+                  <div className="rest-timer-head"><Timer size={14} /> {restSeconds <= 0 ? 'Descanso concluído' : 'Descanso'}</div>
+                  <div className="rest-timer-value">{String(Math.floor(Math.max(restSeconds, 0) / 60)).padStart(2, '0')}:{String(Math.max(restSeconds, 0) % 60).padStart(2, '0')}</div>
+                  <div className="rest-timer-actions">
+                    <button type="button" onClick={() => setRestSeconds(value => Math.max((value || 0) - 15, 0))}>-15s</button>
+                    <button type="button" onClick={() => setRestSeconds(value => (value || 0) + 15)}>+15s</button>
+                    <button type="button" className="rest-timer-skip" onClick={() => setRestSeconds(null)}>{restSeconds <= 0 ? 'OK' : 'Pular descanso'}</button>
+                  </div>
+                </div>
+              )}
               <div className="session-checklist">
-                {workout.checklist.map(item => (
-                  <label className={`session-check-row ${item.done ? 'done' : ''}`} key={item.exerciseId}>
-                    <input type="checkbox" checked={item.done} onChange={() => toggleSessionExercise(workout.id, item.exerciseId)} />
-                    <span className="session-check-name">{item.name}</span>
-                  </label>
-                ))}
+                {workout.checklist.map(item => {
+                  const detail = userData.exercises.find(exercise => exercise.id === item.exerciseId)
+                  return (
+                    <label className={`session-check-row ${item.done ? 'done' : ''}`} key={item.exerciseId}>
+                      <input type="checkbox" checked={item.done} onChange={() => toggleSessionExercise(workout.id, item.exerciseId)} />
+                      <span className="session-check-name">
+                        <strong>{item.name}</strong>
+                        {detail && <small>{detail.sets} · {detail.weight}</small>}
+                      </span>
+                    </label>
+                  )
+                })}
               </div>
               {workout.progress >= 100 ? (
                 <div className="session-complete"><Check size={16} /> Treino concluído!</div>
