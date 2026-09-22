@@ -22,6 +22,10 @@ button { font: inherit; border: 0; cursor: pointer; }
 .toast { position: fixed; right: 25px; bottom: 25px; z-index: 5; display: flex; align-items: center; gap: 11px; background: #171717; color: white; box-shadow: 0 10px 40px #0002; border-radius: 7px; padding: 13px 14px; min-width: 270px; animation: toast-in .25s ease-out; }.toast-check { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #d9d9d4; color: #171717; font-size: 12px; font-weight: 800; }.toast strong, .toast span { display: block; }.toast strong { font-size: 11px; }.toast span { color: #9d9d98; font-size: 9px; margin-top: 3px; }.toast button { color: #777; background: transparent; margin-left: auto; }.modal-backdrop { position: fixed; z-index: 10; inset: 0; background: #111b; display: grid; place-items: center; padding: 20px; animation: fade-in .2s ease-out; }.modal { position: relative; width: min(100%, 430px); border-radius: 10px; background: #f8f8f5; padding: 31px; box-shadow: 0 20px 80px #0005; }.modal-close { position: absolute; right: 17px; top: 17px; background: transparent; color: #777; }.modal-icon { width: 39px; height: 39px; display: grid; place-items: center; background: #171717; color: white; border-radius: 8px; margin-bottom: 22px; }.modal h2 { margin: 0; font-size: 23px; letter-spacing: -1px; }.modal .muted { line-height: 1.55; margin-top: 8px; }.goal-options { display: grid; gap: 8px; margin: 25px 0 23px; }.goal-options button { display: flex; align-items: center; gap: 11px; background: white; padding: 12px; border: 1px solid #e5e5e1; border-radius: 6px; text-align: left; color: #555; }.goal-options button:hover { border-color: #777; }.goal-options button > svg:first-child { color: #777; }.goal-options span { flex: 1; }.goal-options strong, .goal-options small { display: block; }.goal-options strong { font-size: 11px; color: #222; }.goal-options small { color: #999; font-size: 9px; margin-top: 3px; }.goal-options button > svg:last-child { color: #aaa; }.modal-button { width: 100%; }
 .day-cell { cursor: pointer; }
 .workout-action:disabled { opacity: .55; cursor: default; }
+.workout-config-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: auto; padding: 9px 10px; border: 1px solid #deded8; border-radius: 6px; background: transparent; color: #4b4b47; font-size: 10px; font-weight: 700; }
+.workout-config-button:hover { border-color: #777; background: #f1f1ed; }
+.dark .workout-config-button { border-color: #4a4a4a; color: #e5e5e1; }
+.dark .workout-config-button:hover { background: #2b2b2b; border-color: #777; }
 .goal-card.standalone { grid-template-columns: 59px 1fr; margin-bottom: 20px; }
 .avatar-button { padding: 0; }
 .search-input { border: 1px solid #e0e0da; border-radius: 6px; padding: 8px 11px; font: inherit; font-size: 11px; background: #fff; width: 190px; }
@@ -112,7 +116,7 @@ button { font: inherit; border: 0; cursor: pointer; }
 .dark .workout-checklist-hint { color: #a7a7a2; }
 .session-progress { margin: 16px 0 4px; height: 6px; }
 .session-checklist { display: flex; flex-direction: column; gap: 8px; margin: 20px 0 4px; max-height: 260px; overflow-y: auto; }
-.session-check-row { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid #e5e5e1; border-radius: 6px; cursor: pointer; }
+.session-check-row { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid #e5e5e1; border-radius: 6px; }
 .session-check-row input { width: 16px; height: 16px; accent-color: #171717; flex-shrink: 0; }
 .session-check-name { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #333; }
 .session-check-name small { color: #a0a09a; font-size: 9px; }
@@ -121,11 +125,18 @@ button { font: inherit; border: 0; cursor: pointer; }
 .session-hint { color: #8e8e89; font-size: 10px; margin: 10px 0 0; }
 .session-complete { display: flex; align-items: center; gap: 8px; background: #e9f7ee; color: #1f7a43; font-size: 12px; font-weight: 700; padding: 12px 14px; border-radius: 6px; margin: 12px 0 0; }
 .checklist-picker { display: flex; flex-direction: column; gap: 8px; margin: 22px 0 4px; max-height: 300px; overflow-y: auto; }
-.checklist-picker-row { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid #e5e5e1; border-radius: 6px; cursor: pointer; }
+.checklist-picker-row { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid #e5e5e1; border-radius: 6px; }
 .checklist-picker-row input { width: 16px; height: 16px; accent-color: #171717; flex-shrink: 0; }
 .checklist-picker-row.checked { background: #f7f7f4; border-color: #d8d8d3; }
 .checklist-picker-row strong { display: block; font-size: 11px; color: #222; }
 .checklist-picker-row small { display: block; font-size: 9px; color: #999; margin-top: 2px; }
+.checklist-picker-name { flex: 1; min-width: 0; }
+.exercise-setting { display: flex; flex-direction: column; gap: 3px; color: #8e8e89; font-family: 'DM Mono', monospace; font-size: 8px; white-space: nowrap; }
+.exercise-setting input { width: 58px; border: 1px solid #deded8; border-radius: 5px; padding: 6px 5px; font: inherit; font-size: 11px; color: #222; background: #fff; }
+.session-setting input { width: 43px; }
+.exercise-timer-button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 76px; padding: 8px 7px; border-radius: 5px; background: #171717; color: #fff; font-size: 9px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.exercise-timer-button:hover { background: #3a3a3a; }
+.exercise-timer-button.finished { background: #1f7a43; }
 .rest-timer { background: #171717; color: #fff; border-radius: 8px; padding: 14px 16px; margin: 16px 0 4px; }
 .rest-timer.done { background: #1f7a43; }
 .rest-timer-head { display: flex; align-items: center; gap: 6px; color: #b4b4af; font-size: 9px; font-family: 'DM Mono', monospace; letter-spacing: .5px; text-transform: uppercase; }
@@ -148,3 +159,4 @@ button { font: inherit; border: 0; cursor: pointer; }
 @media (max-width: 1100px) { .sidebar { width: 220px; }.content-grid { gap: 25px; }.workout-grid { grid-template-columns: 1fr 1fr; }.workout-card:last-child { display: none; }.metrics-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 760px) { .sidebar { position: fixed; z-index: 8; left: -260px; top: 0; width: 254px; transition: left .2s ease; }.sidebar-open { left: 0; box-shadow: 12px 0 40px #0004; }.mobile-menu { display: grid; }.topbar { height: 60px; padding: 0 18px; }.breadcrumb { display: none; }.top-actions { margin-left: auto; }.search-button { display: none; }.search-input { display: none; }.notif-panel { right: -14px; width: 240px; }.page-wrap { padding: 31px 18px 88px; }.welcome-row { display: block; margin-bottom: 28px; }.welcome-row .primary-button { margin-top: 22px; width: 100%; }.metrics-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 31px; }.metric-card { padding: 14px; min-height: 132px; }.metric-value { font-size: 25px; }.metric-foot { display: block; line-height: 1.5; }.content-grid { display: block; }.right-column { margin-top: 39px; }.week-strip { gap: 4px; }.week-summary { grid-template-columns: 1fr; margin-bottom: 26px; }.shortcuts-row { margin-bottom: 24px; }.day-cell { padding: 8px 2px; }.day-cell strong { font-size: 13px; }.workout-grid { grid-template-columns: 1fr; }.workout-card { min-height: 275px; }.workout-card:nth-child(n+2) { display: none; }.tip-card { margin-bottom: 20px; }.toast { right: 14px; left: 14px; bottom: 14px; min-width: 0; }.modal { padding: 25px 20px; }.heading-actions { flex-wrap: wrap; }.premium-status-card { flex-wrap: wrap; }.secondary-button.light { margin-left: 0; width: 100%; justify-content: center; }.history-row { flex-wrap: wrap; }.history-meta { width: 100%; justify-content: space-between; } }
 @media (max-width: 390px) { .metrics-grid { grid-template-columns: 1fr; }.metric-card { min-height: 118px; }.metric-card:nth-child(n+3) { display: none; }.week-strip { overflow: hidden; }.day-cell { min-width: 41px; }.day-cell:nth-child(n+6) { display: none; } }
+.modal { max-height: calc(100vh - 40px); overflow-y: auto; }

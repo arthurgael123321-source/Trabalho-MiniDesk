@@ -102,14 +102,12 @@ const PREMIUM_PLANS = [
 
 const shortcuts = [
   { label: 'Força', icon: Flame },
-  { label: 'Cardio', icon: HeartPulse },
   { label: 'Mobilidade', icon: Sparkles },
   { label: 'Full body', icon: Dumbbell },
 ]
 
 const WORKOUT_PRESETS = {
   'Força': { title: 'Treino de força', subtitle: 'Foco em potência muscular', time: 40, level: 'Iniciante', calories: 300, tone: 'light' },
-  'Cardio': { title: 'Treino de condicionamento', subtitle: 'Resistência cardiovascular', time: 30, level: 'Iniciante', calories: 280, tone: 'light' },
   'Mobilidade': { title: 'Treino de mobilidade', subtitle: 'Alongamento guiado', time: 20, level: 'Todos os níveis', calories: 110, tone: 'outline' },
   'Full body': { title: 'Treino full body', subtitle: 'Corpo inteiro em uma sessão', time: 35, level: 'Intermediário', calories: 320, tone: 'light' },
 }
@@ -117,7 +115,7 @@ const WORKOUT_PRESETS = {
 const REST_DURATION = 60
 
 const notifications = [
-  { title: 'Treino sugerido', body: 'Baseado no seu histórico, que tal um HIIT hoje?' },
+  { title: 'Treino sugerido', body: 'Baseado no seu histórico, que tal trabalhar força hoje?' },
   { title: 'Meta semanal', body: 'Você está perto de bater sua meta da semana!' },
 ]
 
@@ -126,10 +124,46 @@ function getInitials(name) {
   return parts.map(part => part[0]?.toUpperCase() || '').join('') || '?'
 }
 
+function progressWeight(weight) {
+  const match = String(weight).match(/(\d+(?:[.,]\d+)?)/)
+  if (!match) return weight
+  const value = Number(match[1].replace(',', '.'))
+  const unit = String(weight).slice(match.index + match[0].length).trim()
+  const increment = /kg/i.test(unit) ? 2.5 : Math.max(value * 0.05, 1)
+  const nextValue = Math.round((value + increment) * 10) / 10
+  return `${String(nextValue).replace('.', ',')}${unit ? ` ${unit}` : ''}`
+}
+
+function getSetCount(value) {
+  const match = String(value).match(/\d+/)
+  return match ? Number(match[0]) : 3
+}
+
 function normalizeUserData(data) {
   if (!data) return createDefaultUserData()
   const base = { plan: 'free', planCycle: null, supportTickets: [], history: [], ...data }
-  return { ...base, workouts: (base.workouts || []).map(item => ({ checklist: [], ...item })) }
+  const exercises = base.exercises || []
+  return {
+    ...base,
+    workouts: (base.workouts || []).filter(item => item.category?.toLowerCase() !== 'cardio').map(item => {
+      const checklist = (item.checklist || []).map(checkItem => {
+        const exercise = exercises.find(candidate => candidate.id === checkItem.exerciseId)
+        return {
+          ...checkItem,
+          name: exercise?.name || checkItem.name,
+          sets: Number(checkItem.sets) || getSetCount(exercise?.sets),
+          restSeconds: Number(checkItem.restSeconds) || 60,
+        }
+      })
+      return {
+        checklist,
+        ...item,
+        progress: checklist.length > 0
+          ? Math.round((checklist.filter(exercise => exercise.done).length / checklist.length) * 100)
+          : item.progress || 0,
+      }
+    }),
+  }
 }
 
 function App() {
@@ -148,7 +182,8 @@ function App() {
   const [hasNotifications, setHasNotifications] = useState(true)
   const [activeSessionId, setActiveSessionId] = useState(null)
   const [checklistEditorId, setChecklistEditorId] = useState(null)
-  const [restSeconds, setRestSeconds] = useState(null)
+  const [editingWorkoutId, setEditingWorkoutId] = useState(null)
+  const [exerciseTimer, setExerciseTimer] = useState(null)
   const [editingExerciseId, setEditingExerciseId] = useState(null)
 
   useEffect(() => {
@@ -172,14 +207,14 @@ function App() {
   }, [currentUser, userData])
 
   useEffect(() => {
-    setRestSeconds(null)
+    setExerciseTimer(null)
   }, [activeSessionId])
 
   useEffect(() => {
-    if (restSeconds === null || restSeconds <= 0) return undefined
-    const timer = window.setTimeout(() => setRestSeconds(value => (value !== null ? value - 1 : null)), 1000)
+    if (!exerciseTimer || exerciseTimer.remaining <= 0) return undefined
+    const timer = window.setTimeout(() => setExerciseTimer(value => value ? { ...value, remaining: value.remaining - 1 } : null), 1000)
     return () => window.clearTimeout(timer)
-  }, [restSeconds])
+  }, [exerciseTimer])
 
   if (!authChecked) return null
 
@@ -204,28 +239,33 @@ function App() {
     setMenuOpen(false)
   }
 
-  const buildHistoryEntry = (workout) => ({
+  const buildHistoryEntry = (workout, exercises = userData.exercises) => ({
     id: `h${Date.now()}`,
     title: workout.title,
     category: workout.category,
     date: new Date().toLocaleString('pt-BR'),
     duration: `${workout.time} min`,
     calories: `${workout.calories} kcal`,
+    progression: (workout.checklist || [])
+      .map(item => exercises.find(exercise => exercise.id === item.exerciseId))
+      .filter(Boolean)
+      .map(exercise => `${exercise.name}: ${progressWeight(exercise.weight)}`),
   })
 
-  const startWorkout = (id) => {
-    const workout = userData.workouts.find(item => item.id === id)
-    if (!workout || workout.progress >= 100) return
-    const hadActiveToday = userData.week.some(day => day.status === 'active')
+  const completeWorkout = (workout) => {
+    if (!workout || !workout.checklist?.length || workout.checklist.some(item => !item.done)) return
     setUserData(prev => ({
       ...prev,
-      workouts: prev.workouts.map(item => item.id === id ? { ...item, progress: 100 } : item),
+      workouts: prev.workouts.map(item => item.id === workout.id ? { ...item, progress: 100, checklist: workout.checklist, completedSessions: (item.completedSessions || 0) + 1, lastCompletedAt: new Date().toISOString() } : item),
       week: prev.week.map(day => day.status === 'active' ? { ...day, status: 'done' } : day),
       lastWorkout: { title: workout.title, date: 'Agora mesmo', duration: `${workout.time} min`, calories: `${workout.calories} kcal` },
-      history: [buildHistoryEntry(workout), ...(prev.history || [])].slice(0, 40),
+      history: [buildHistoryEntry(workout, prev.exercises), ...(prev.history || [])].slice(0, 40),
+      exercises: prev.exercises.map(exercise => (workout.checklist.some(item => item.exerciseId === exercise.id)
+        ? { ...exercise, weight: progressWeight(exercise.weight) }
+        : exercise)),
       stats: {
         ...prev.stats,
-        streakDays: hadActiveToday ? prev.stats.streakDays + 1 : prev.stats.streakDays,
+        streakDays: prev.week.some(day => day.status === 'active') ? prev.stats.streakDays + 1 : prev.stats.streakDays,
         totalMinutes: prev.stats.totalMinutes + workout.time,
         calories: prev.stats.calories + workout.calories,
       },
@@ -236,10 +276,18 @@ function App() {
 
   const startWorkoutSession = (id) => {
     const workout = userData.workouts.find(item => item.id === id)
-    if (!workout || workout.progress >= 100) return
+    if (!workout) return
     if (!workout.checklist || workout.checklist.length === 0) {
-      startWorkout(id)
+      triggerToast('Configure seu treino', 'Adicione pelo menos um exercício na checklist antes de começar.')
       return
+    }
+    if (workout.progress >= 100) {
+      setUserData(prev => ({
+        ...prev,
+        workouts: prev.workouts.map(item => item.id === id
+          ? { ...item, progress: 0, checklist: item.checklist.map(exercise => ({ ...exercise, done: false })) }
+          : item),
+      }))
     }
     setActiveSessionId(id)
   }
@@ -253,13 +301,30 @@ function App() {
         const exists = current.some(chk => chk.exerciseId === exercise.id)
         const checklist = exists
           ? current.filter(chk => chk.exerciseId !== exercise.id)
-          : [...current, { exerciseId: exercise.id, name: exercise.name, done: false }]
+          : [...current, { exerciseId: exercise.id, name: exercise.name, sets: getSetCount(exercise.sets), restSeconds: 60, done: false }]
         const progress = checklist.length > 0
           ? Math.round((checklist.filter(chk => chk.done).length / checklist.length) * 100)
           : item.progress
         return { ...item, checklist, progress }
       }),
     }))
+  }
+
+  const updateWorkoutExercise = (workoutId, exerciseId, updates) => {
+    setUserData(prev => ({
+      ...prev,
+      workouts: prev.workouts.map(workout => workout.id === workoutId
+        ? { ...workout, checklist: (workout.checklist || []).map(item => item.exerciseId === exerciseId ? { ...item, ...updates } : item) }
+        : workout),
+    }))
+  }
+
+  const startExerciseTimer = (workoutId, item) => {
+    if (exerciseTimer?.workoutId === workoutId && exerciseTimer.exerciseId === item.exerciseId && exerciseTimer.remaining > 0) {
+      setExerciseTimer(null)
+      return
+    }
+    setExerciseTimer({ workoutId, exerciseId: item.exerciseId, remaining: Number(item.restSeconds) || 60 })
   }
 
   const toggleSessionExercise = (workoutId, exerciseId) => {
@@ -269,29 +334,17 @@ function App() {
     const turningOn = Boolean(target && !target.done)
     const checklist = workout.checklist.map(chk => chk.exerciseId === exerciseId ? { ...chk, done: !chk.done } : chk)
     const progress = Math.round((checklist.filter(chk => chk.done).length / checklist.length) * 100)
-    const justCompleted = progress >= 100 && workout.progress < 100
-    const hadActiveToday = userData.week.some(day => day.status === 'active')
     setUserData(prev => ({
       ...prev,
       workouts: prev.workouts.map(item => item.id === workoutId ? { ...item, checklist, progress } : item),
-      ...(justCompleted ? {
-        week: prev.week.map(day => day.status === 'active' ? { ...day, status: 'done' } : day),
-        lastWorkout: { title: workout.title, date: 'Agora mesmo', duration: `${workout.time} min`, calories: `${workout.calories} kcal` },
-        history: [buildHistoryEntry(workout), ...(prev.history || [])].slice(0, 40),
-        stats: {
-          ...prev.stats,
-          streakDays: hadActiveToday ? prev.stats.streakDays + 1 : prev.stats.streakDays,
-          totalMinutes: prev.stats.totalMinutes + workout.time,
-          calories: prev.stats.calories + workout.calories,
-        },
-        goal: { ...prev.goal, current: Math.min(prev.goal.current + 1, prev.goal.target) },
-      } : {}),
     }))
-    if (justCompleted) {
-      setRestSeconds(null)
+    if (progress >= 100 && workout.progress < 100) {
+      completeWorkout({ ...workout, checklist })
+      setExerciseTimer(null)
+      setActiveSessionId(null)
       triggerToast('Treino concluído!', `Você completou toda a checklist de "${workout.title}". Mandou bem, ${currentUser.name.split(' ')[0]}!`)
     } else {
-      setRestSeconds(turningOn ? REST_DURATION : null)
+      setExerciseTimer(turningOn ? { workoutId, exerciseId, remaining: Number(target?.restSeconds) || REST_DURATION } : null)
     }
   }
 
@@ -355,7 +408,45 @@ function App() {
   }
 
   const deleteExercise = (id) => {
-    setUserData(prev => ({ ...prev, exercises: prev.exercises.filter(item => item.id !== id) }))
+    setUserData(prev => ({
+      ...prev,
+      exercises: prev.exercises.filter(item => item.id !== id),
+      workouts: prev.workouts.map(workout => {
+        const checklist = (workout.checklist || []).filter(item => item.exerciseId !== id)
+        return {
+          ...workout,
+          checklist,
+          progress: checklist.length > 0
+            ? Math.round((checklist.filter(item => item.done).length / checklist.length) * 100)
+            : 0,
+        }
+      }),
+    }))
+    triggerToast('Exercício removido', 'Ele também foi retirado dos treinos que usavam esse exercício.')
+  }
+
+  const updateWorkout = (event) => {
+    event.preventDefault()
+    const data = new FormData(event.target)
+    const title = data.get('title').trim()
+    const subtitle = data.get('subtitle').trim()
+    const category = data.get('category').trim()
+    const time = Number(data.get('time'))
+    const level = data.get('level').trim()
+    const calories = Number(data.get('calories'))
+    if (!title || !subtitle || !category || !time || !level || !calories) return
+    if (category.toLowerCase() === 'cardio') {
+      triggerToast('Categoria indisponível', 'Este aplicativo está configurado apenas para treinos sem cardio.')
+      return
+    }
+    setUserData(prev => ({
+      ...prev,
+      workouts: prev.workouts.map(item => item.id === editingWorkoutId
+        ? { ...item, title, subtitle, category, time, level, calories }
+        : item),
+    }))
+    setEditingWorkoutId(null)
+    triggerToast('Treino atualizado', 'Nome, duração e intensidade foram salvos.')
   }
 
   const updateExercise = (event) => {
@@ -595,7 +686,7 @@ function App() {
                     {selectedCategory ? <button className="text-button" onClick={() => setSelectedCategory(null)}><X size={14} /> Limpar filtro</button> : <button className="icon-button" onClick={() => setView('workouts')}><MoreHorizontal size={19} /></button>}
                   </div>
                   {overviewWorkouts.length > 0 ? (
-                    <div className="workout-grid">{overviewWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div>{workout.checklist?.length > 0 && <div className="workout-checklist-hint"><ListChecks size={12} /> {workout.checklist.filter(chk => chk.done).length}/{workout.checklist.length} exercícios</div>}</div>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkoutSession(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+                    <div className="workout-grid">{overviewWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.tone === 'dark' ? 'SEU TREINO DE HOJE' : 'RECOMENDADO'}</span><div className="card-top-actions"><button className="card-more" onClick={() => setEditingWorkoutId(workout.id)} aria-label="Editar treino"><Pencil size={15} /></button><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div>{workout.checklist?.length > 0 && <div className="workout-checklist-hint"><ListChecks size={12} /> {workout.checklist.filter(chk => chk.done).length}/{workout.checklist.length} exercícios</div>}</div><button className="workout-config-button" onClick={() => setChecklistEditorId(workout.id)}><ListChecks size={14} /> {workout.checklist?.length ? 'Editar exercícios' : 'Adicionar exercícios'}</button>{workout.progress > 0 && <div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div>}<button className="workout-action" onClick={() => startWorkoutSession(workout.id)}>{workout.progress >= 100 ? 'Refazer treino' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
                   ) : userData.workouts.length > 0 ? (
                     <div className="empty-state">
                       <Grid2X2 size={30} />
@@ -644,7 +735,7 @@ function App() {
                 </div>
               </div>
               {allWorkouts.length > 0 ? (
-                <div className="workout-grid">{allWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.category}</span><div className="card-top-actions"><button className="card-more" onClick={() => setChecklistEditorId(workout.id)} aria-label="Editar checklist"><ListChecks size={15} /></button><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div>{workout.checklist?.length > 0 && <div className="workout-checklist-hint"><ListChecks size={12} /> {workout.checklist.filter(chk => chk.done).length}/{workout.checklist.length} exercícios</div>}</div><div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div><button className="workout-action" disabled={workout.progress >= 100} onClick={() => startWorkoutSession(workout.id)}>{workout.progress >= 100 ? 'Concluído ✓' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
+                <div className="workout-grid">{allWorkouts.map(workout => <article className={`workout-card ${workout.tone}`} key={workout.id}><div className="workout-card-top"><span className="workout-tag">{workout.category}</span><div className="card-top-actions"><button className="card-more" onClick={() => setEditingWorkoutId(workout.id)} aria-label="Editar treino"><Pencil size={15} /></button><button className="card-more" onClick={() => setChecklistEditorId(workout.id)} aria-label="Editar exercícios do treino"><ListChecks size={15} /></button><button className="card-more" onClick={() => deleteWorkout(workout.id)} aria-label="Remover treino"><Trash2 size={15} /></button></div></div><div className="workout-illustration"><Dumbbell size={44} strokeWidth={1.2} /></div><div className="workout-info"><h3>{workout.title}</h3><p>{workout.subtitle}</p><div className="workout-meta"><span><Clock3 size={14} /> {workout.time} min</span><span><Activity size={14} /> {workout.level}</span></div>{workout.checklist?.length > 0 && <div className="workout-checklist-hint"><ListChecks size={12} /> {workout.checklist.filter(chk => chk.done).length}/{workout.checklist.length} exercícios</div>}</div><button className="workout-config-button" onClick={() => setChecklistEditorId(workout.id)}><ListChecks size={14} /> {workout.checklist?.length ? 'Editar exercícios' : 'Adicionar exercícios'}</button><div className="workout-progress"><div><span>Progresso</span><strong>{workout.progress}%</strong></div><div className="progress-bar"><span style={{ width: `${workout.progress}%` }} /></div></div><button className="workout-action" onClick={() => startWorkoutSession(workout.id)}>{workout.progress >= 100 ? 'Refazer treino' : workout.progress > 0 ? 'Continuar treino' : 'Começar treino'} <ArrowUpRight size={16} /></button></article>)}</div>
               ) : (
                 <div className="empty-state">
                   <UserRound size={30} />
@@ -838,7 +929,6 @@ function App() {
             <p className="muted">Escolha um foco para começar com uma sugestão personalizada.</p>
             <div className="goal-options">
               <button onClick={() => createWorkout('Força')}><Flame size={18} /><span><strong>Força</strong><small>Ganhar potência e massa</small></span><ChevronRight size={16} /></button>
-              <button onClick={() => createWorkout('Cardio')}><HeartPulse size={18} /><span><strong>Condicionamento</strong><small>Mais resistência no dia a dia</small></span><ChevronRight size={16} /></button>
               <button onClick={() => createWorkout('Mobilidade')}><Sparkles size={18} /><span><strong>Mobilidade</strong><small>Movimente-se melhor</small></span><ChevronRight size={16} /></button>
               <button onClick={() => createWorkout('Full body')}><Dumbbell size={18} /><span><strong>Full body</strong><small>Corpo inteiro em uma sessão</small></span><ChevronRight size={16} /></button>
             </div>
@@ -865,6 +955,29 @@ function App() {
           </div>
         )
       })()}
+      {editingWorkoutId && (() => {
+        const workout = userData.workouts.find(item => item.id === editingWorkoutId)
+        if (!workout) return null
+        return (
+          <div className="modal-backdrop" onClick={() => setEditingWorkoutId(null)}>
+            <div className="modal" onClick={event => event.stopPropagation()}>
+              <button className="modal-close" onClick={() => setEditingWorkoutId(null)} aria-label="Fechar modal"><X size={18} /></button>
+              <div className="modal-icon"><Pencil size={21} /></div>
+              <p className="eyebrow">EDITAR TREINO</p>
+              <h2>{workout.title}</h2>
+              <form className="settings-form" onSubmit={updateWorkout}>
+                <label>Nome<input name="title" defaultValue={workout.title} required /></label>
+                <label>Descrição<input name="subtitle" defaultValue={workout.subtitle} required /></label>
+                <label>Categoria<input name="category" defaultValue={workout.category} required /></label>
+                <label>Duração em minutos<input name="time" type="number" min="1" defaultValue={workout.time} required /></label>
+                <label>Nível<input name="level" defaultValue={workout.level} required /></label>
+                <label>Calorias estimadas<input name="calories" type="number" min="1" defaultValue={workout.calories} required /></label>
+                <button className="primary-button" type="submit"><Save size={16} /> Salvar treino</button>
+              </form>
+            </div>
+          </div>
+        )
+      })()}
       {checklistEditorId && (() => {
         const workout = userData.workouts.find(item => item.id === checklistEditorId)
         if (!workout) return null
@@ -875,16 +988,21 @@ function App() {
               <div className="modal-icon"><ListChecks size={21} /></div>
               <p className="eyebrow">CHECKLIST</p>
               <h2>Exercícios de "{workout.title}"</h2>
-              <p className="muted">Escolha exercícios do seu catálogo para montar a checklist deste treino. Ao concluir todos ao treinar, ele fica 100%.</p>
+              <p className="muted">Adicione exercícios da lista e configure as séries e o timer de cada um.</p>
               {userData.exercises.length > 0 ? (
                 <div className="checklist-picker">
                   {userData.exercises.map(exercise => {
-                    const checked = (workout.checklist || []).some(chk => chk.exerciseId === exercise.id)
+                    const selected = (workout.checklist || []).find(chk => chk.exerciseId === exercise.id)
+                    const checked = Boolean(selected)
                     return (
-                      <label className={`checklist-picker-row ${checked ? 'checked' : ''}`} key={exercise.id}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleExerciseInChecklist(workout.id, exercise)} />
-                        <span><strong>{exercise.name}</strong><small>{exercise.sets} · {exercise.weight}</small></span>
-                      </label>
+                      <div className={`checklist-picker-row ${checked ? 'checked' : ''}`} key={exercise.id}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleExerciseInChecklist(workout.id, exercise)} aria-label={`Adicionar ${exercise.name}`} />
+                        <span className="checklist-picker-name"><strong>{exercise.name}</strong><small>{exercise.weight}</small></span>
+                        {checked && <>
+                          <label className="exercise-setting">Séries<input type="number" min="1" max="99" value={selected.sets} onChange={event => updateWorkoutExercise(workout.id, exercise.id, { sets: Number(event.target.value) || 1 })} /></label>
+                          <label className="exercise-setting">Timer (s)<input type="number" min="5" max="3600" value={selected.restSeconds} onChange={event => updateWorkoutExercise(workout.id, exercise.id, { restSeconds: Number(event.target.value) || 5 })} /></label>
+                        </>}
+                      </div>
                     )
                   })}
                 </div>
@@ -906,30 +1024,23 @@ function App() {
               <div className="modal-icon"><Dumbbell size={21} /></div>
               <p className="eyebrow">SESSÃO DE TREINO</p>
               <h2>{workout.title}</h2>
-              <p className="muted">Marque cada exercício conforme for concluindo. Ao completar todos, o treino fica 100%.</p>
+              <p className="muted">Faça as séries configuradas, use o timer de cada exercício e marque quando concluir.</p>
               <div className="progress-bar session-progress"><span style={{ width: `${workout.progress}%` }} /></div>
-              {restSeconds !== null && (
-                <div className={`rest-timer ${restSeconds <= 0 ? 'done' : ''}`}>
-                  <div className="rest-timer-head"><Timer size={14} /> {restSeconds <= 0 ? 'Descanso concluído' : 'Descanso'}</div>
-                  <div className="rest-timer-value">{String(Math.floor(Math.max(restSeconds, 0) / 60)).padStart(2, '0')}:{String(Math.max(restSeconds, 0) % 60).padStart(2, '0')}</div>
-                  <div className="rest-timer-actions">
-                    <button type="button" onClick={() => setRestSeconds(value => Math.max((value || 0) - 15, 0))}>-15s</button>
-                    <button type="button" onClick={() => setRestSeconds(value => (value || 0) + 15)}>+15s</button>
-                    <button type="button" className="rest-timer-skip" onClick={() => setRestSeconds(null)}>{restSeconds <= 0 ? 'OK' : 'Pular descanso'}</button>
-                  </div>
-                </div>
-              )}
               <div className="session-checklist">
                 {workout.checklist.map(item => {
                   const detail = userData.exercises.find(exercise => exercise.id === item.exerciseId)
+                  const timerActive = exerciseTimer?.workoutId === workout.id && exerciseTimer.exerciseId === item.exerciseId
+                  const timerValue = timerActive ? exerciseTimer.remaining : item.restSeconds
                   return (
-                    <label className={`session-check-row ${item.done ? 'done' : ''}`} key={item.exerciseId}>
+                    <div className={`session-check-row ${item.done ? 'done' : ''}`} key={item.exerciseId}>
                       <input type="checkbox" checked={item.done} onChange={() => toggleSessionExercise(workout.id, item.exerciseId)} />
                       <span className="session-check-name">
                         <strong>{item.name}</strong>
-                        {detail && <small>{detail.sets} · {detail.weight}</small>}
+                        {detail && <small>{detail.weight}</small>}
                       </span>
-                    </label>
+                      <label className="exercise-setting session-setting">Séries<input type="number" min="1" max="99" value={item.sets || 1} onChange={event => updateWorkoutExercise(workout.id, item.exerciseId, { sets: Number(event.target.value) || 1 })} /></label>
+                      <button type="button" className={`exercise-timer-button ${timerActive && exerciseTimer.remaining <= 0 ? 'finished' : ''}`} onClick={() => startExerciseTimer(workout.id, item)}><Timer size={13} /> {timerActive ? `${String(Math.floor(Math.max(timerValue, 0) / 60)).padStart(2, '0')}:${String(Math.max(timerValue, 0) % 60).padStart(2, '0')}` : 'Iniciar'}</button>
+                    </div>
                   )
                 })}
               </div>

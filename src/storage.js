@@ -91,10 +91,9 @@ export function createDefaultUserData() {
       { day: 'DOM', date: '18', status: 'rest' },
     ],
     workouts: [
-      { id: 'w1', title: 'Força & potência', subtitle: 'Peito, ombros e tríceps', time: 45, level: 'Intermediário', progress: 72, tone: 'dark', category: 'Força', calories: 380, checklist: [] },
-      { id: 'w2', title: 'HIIT cardio', subtitle: 'Corrida e intervalos', time: 28, level: 'Intermediário', progress: 0, tone: 'light', category: 'Cardio', calories: 310, checklist: [] },
-      { id: 'w3', title: 'Full body', subtitle: 'Corpo inteiro', time: 32, level: 'Iniciante', progress: 38, tone: 'light', category: 'Full body', calories: 260, checklist: [] },
-      { id: 'w4', title: 'Mobilidade', subtitle: 'Alongamento e core', time: 20, level: 'Todos os níveis', progress: 0, tone: 'outline', category: 'Mobilidade', calories: 120, checklist: [] },
+      { id: 'w1', title: 'Força & potência', subtitle: 'Peito, ombros e tríceps', time: 45, level: 'Intermediário', progress: 72, tone: 'dark', category: 'Força', calories: 380, checklist: [{ exerciseId: 'e1', name: 'Supino reto', done: false }, { exerciseId: 'e2', name: 'Desenvolvimento', done: false }, { exerciseId: 'e3', name: 'Tríceps na polia', done: false }] },
+      { id: 'w2', title: 'Full body', subtitle: 'Corpo inteiro', time: 32, level: 'Iniciante', progress: 38, tone: 'light', category: 'Full body', calories: 260, checklist: [{ exerciseId: 'e1', name: 'Supino reto', done: false }, { exerciseId: 'e2', name: 'Desenvolvimento', done: false }, { exerciseId: 'e3', name: 'Tríceps na polia', done: false }] },
+      { id: 'w3', title: 'Mobilidade', subtitle: 'Alongamento e core', time: 20, level: 'Todos os níveis', progress: 0, tone: 'outline', category: 'Mobilidade', calories: 120, checklist: [{ exerciseId: 'e2', name: 'Desenvolvimento', done: false }] },
     ],
     exercises: [
       { id: 'e1', name: 'Supino reto', sets: '4 séries', weight: '42 kg', icon: 'SR' },
